@@ -1,0 +1,8 @@
+*.npy
+*.yml
+*.pyc
+*.txt
+*.o
+*.npz
+*.tar
+*.so

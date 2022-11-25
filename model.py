@@ -590,6 +590,75 @@ class SimpleX_batch(LGN):
 
 
 
+from module.mask_model import *
+
+from module.inv_loss import *
+
+
+class INV_LGN(MF):
+    def __init__(self, args, data):
+        super().__init__(args, data)
+        self.Graph = data.getSparseGraph()
+        self.n_layers = args.n_layers
+        self.M = Mask_Model()
+        self.inv_loss= Inv_Loss()
+
+    
+    def compute(self, mask=False):
+
+        #TODO: add masked LGN propogation
+        users_emb = self.embed_user.weight
+        items_emb = self.embed_item.weight
+        all_emb = torch.cat([users_emb, items_emb])
+
+        embs = [all_emb]
+        g_droped = self.Graph
+
+        for layer in range(self.n_layers):
+            if mask:
+                g_droped = self.M.mask(g_droped)
+            all_emb = torch.sparse.mm(g_droped, all_emb)
+            embs.append(all_emb)
+        embs = torch.stack(embs, dim=1)
+        light_out = torch.mean(embs, dim=1)
+        users, items = torch.split(light_out, [self.n_users, self.n_items])
+
+        return users, items
+    
+    def regularize(self,users,pos_items,neg_items):
+        userEmb0 = self.embed_user(users)
+        posEmb0 = self.embed_item(pos_items)
+        negEmb0 = self.embed_item(neg_items)
+        regularizer = 0.5 * torch.norm(userEmb0) ** 2 + 0.5 * torch.norm(posEmb0) ** 2 + 0.5 * torch.norm(negEmb0) ** 2
+        return regularizer
+        
+
+    def forward(self, users, pos_items, neg_items):
+        all_users, all_items = self.compute()
+
+        users_emb = all_users[users]
+        pos_emb = all_items[pos_items]
+        neg_emb = all_items[neg_items]
+
+        pos_scores = torch.sum(torch.mul(users_emb, pos_emb), dim=1)  # users, pos_items, neg_items have the same shape
+        neg_scores = torch.sum(torch.mul(users_emb, neg_emb), dim=1)
+
+
+        all_users_m, all_items_m = self.compute(True)
+
+        regularizer = self.regularize(users,pos_items,neg_items) / self.batch_size
+
+        maxi = torch.log(torch.sigmoid(pos_scores - neg_scores) + 1e-10)
+
+        mf_loss = torch.negative(torch.mean(maxi))
+        reg_loss = self.decay * regularizer
+        inv_loss = self.inv_loss(all_users,all_users_m,all_items,all_items_m)
+
+        return mf_loss, reg_loss, inv_loss
+
+
+
+
 '''
 class BPRMF(LGN):
     def __init__(self, args, data):
