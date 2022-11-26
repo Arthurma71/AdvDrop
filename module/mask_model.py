@@ -7,6 +7,7 @@ from module.inv_loss import *
 class Mask_Model(nn.Module):
     def __init__(self, args):
         super().__init__(args)
+        # TODO: Modify M with Attention
         self.M = nn.Linear()
         self.inv_loss = Inv_Loss()
         self.tau=args.mask_tau
