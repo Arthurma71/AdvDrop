@@ -203,3 +203,10 @@ def checktensor(tensor):
         return idx
     else:
         return -1
+
+
+def sparse_dense_mul(s, d):
+    i = s._indices()
+    v = s._values()
+    dv = d[i[0,:], i[1,:]]  # get values from relevant entries of dense matrix
+    return torch.sparse.FloatTensor(i, v * dv, s.size())
