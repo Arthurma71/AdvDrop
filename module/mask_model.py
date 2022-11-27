@@ -4,15 +4,14 @@ from module.inv_loss import *
 
 
 class Mask_Model(nn.Module):
-    def __init__(self, args, u_i_matrix, all_user_embed_m, all_item_embed_m):
-        super().__init__(args, u_i_matrix, all_user_embed_m, all_item_embed_m)
+    def __init__(self, args, u_i_matrix, embed_h):
+        super().__init__(args, u_i_matrix, embed_h)
         # TODO: Modify M with Attention
-        self.M = self.get_M_attention(u_i_matrix, all_user_embed_m, all_item_embed_m)
         self.inv_loss = Inv_Loss()
         self.tau = args.mask_tau
-        embed_h = all_user_embed_m.shape[1]
         self.Q = nn.Linear(embed_h, embed_h)
         self.K = nn.Linear(embed_h, embed_h)
+        self.u_i_matrix = u_i_matrix
         # self.V = nn.Linear(embed_h, embed_h)
 
     def forward(self, all_users, all_items, all_users_m, all_items_m, users, pos_items, neg_items):
@@ -45,5 +44,6 @@ class Mask_Model(nn.Module):
 
         return weights_softmax
 
-    def mask(self, A):
-        return self.M * A
+    def mask(self, user_embed, item_embed):
+        M = self.get_M_attention(self.u_i_matrix, user_embed, item_embed)
+        return M

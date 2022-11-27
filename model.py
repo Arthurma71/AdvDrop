@@ -594,7 +594,6 @@ class SimpleX_batch(LGN):
 
 
 from module.mask_model import *
-
 from module.inv_loss import *
 
 
@@ -603,10 +602,10 @@ class INV_LGN(MF):
         super().__init__(args, data)
         self.Graph = data.getSparseGraph()
         self.n_layers = args.n_layers
-        self.M = Mask_Model(args, self.Graph[:self.n_users, self.n_users: ], self.embed_user.weight, self.embed_item.weight)
+        self.M = Mask_Model(args, self.Graph[:self.n_users, self.n_users:], self.emb_dim)
         self.inv_loss = Inv_Loss(args)
 
-    def compute(self, mask = False):
+    def compute(self, mask=False):
         # TODO: add masked LGN propogation
         users_emb = self.embed_user.weight
         items_emb = self.embed_item.weight
@@ -615,9 +614,11 @@ class INV_LGN(MF):
         embs = [all_emb]
         g_droped = self.Graph
 
+        M = self.M.mask(users_emb, items_emb) if mask else None
         for layer in range(self.n_layers):
-            if self.mask:
-                g_droped = self.M.mask(g_droped)
+            if mask:
+                # g_droped = self.M.mask(g_droped)
+                g_droped = M * g_droped
             all_emb = torch.sparse.mm(g_droped, all_emb)
             embs.append(all_emb)
         embs = torch.stack(embs, dim=1)
