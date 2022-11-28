@@ -51,7 +51,16 @@ class Mask_Model(nn.Module):
         mask = torch.cat([M_ui, M_iu], dim=0)
         return mask
 
-    def mask_simple(self):
-        return self.rand_var_sparse
+    def mask_simple(self,user_embed, item_embed):
+        user_num = user_embed.shape[0]
+        item_num = item_embed.shape[0]
+        user_pad = torch.sparse.FloatTensor(torch.Size([user_num, user_num]))
+        item_pad = torch.sparse.FloatTensor(torch.Size([item_num, item_num]))
+
+        M_ui = torch.cat([user_pad, self.rand_var_sparse], dim=1)
+        M_iu = torch.cat([self.rand_var_sparse, item_pad], dim=1)
+
+        mask = torch.cat([M_ui, M_iu], dim=0)
+        return mask
 
 
