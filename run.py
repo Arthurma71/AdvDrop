@@ -132,12 +132,14 @@ if __name__ == '__main__':
 
         if epoch >= args.pre_epochs:
             #model.warmup = False
-
+            
             running_loss_adp, avg_mf_loss_m, avg_inv_loss_adp, num_batches_adp = 0, 0, 0, 0
 
             t1 = time.time()
             pbar = tqdm(enumerate(data.train_loader), total=len(data.train_loader))
+            #print("embed_user grad before", model.embed_user.weight.requires_grad)
             model.freeze_args(True)
+            #print("embed_user grad after", model.embed_user.weight.requires_grad)
 
             # adaptive mask step
             for batch_i, batch in pbar:
@@ -156,8 +158,8 @@ if __name__ == '__main__':
 
                 loss = -inv_loss + args.adaptive_tau * mf_loss_m
 
-                print(inv_loss.requires_grad)
-                print(mf_loss_m.requires_grad)
+                #print(inv_loss.requires_grad)
+                #print(mf_loss_m.requires_grad)
 
                 optimizer.zero_grad()
                 loss.backward()

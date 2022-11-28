@@ -27,8 +27,6 @@ class Mask_Model(nn.Module):
     def get_M_attention(self, u_i_matrix, user_embed, item_embed):
         Q = self.Q(user_embed)  # No.user x embedding
         K = self.K(item_embed)  # No.item x embedding
-        print("Q grad", Q.requires_grad)
-        print("K grad", K.requires_grad)
         weights = torch.matmul(Q, K.T)  # No.user x No.item
         gumble_G = torch.log(-torch.log(torch.rand(u_i_matrix._values().shape[0]).to(self.device)))
         gumble_G = torch.sparse_coo_tensor(u_i_matrix._indices(), gumble_G, u_i_matrix.size())
@@ -46,9 +44,9 @@ class Mask_Model(nn.Module):
         item_pad = torch.sparse.FloatTensor(torch.Size([item_num, item_num])).to(self.device)
 
         M_ui = self.get_M_attention(self.u_i_matrix, user_embed, item_embed)
-        print("M_ui grad before", M_ui.requires_grad)
+        #print("M_ui grad before", M_ui.requires_grad)
         M_ui = torch.cat([user_pad, M_ui], dim=1)
-        print("M_ui grad after", M_ui.requires_grad)
+        #print("M_ui grad after", M_ui.requires_grad)
         M_iu = self.get_M_attention(torch.transpose(self.u_i_matrix,0,1), item_embed, user_embed)
         M_iu = torch.cat([M_iu, item_pad], dim=1)
 
@@ -58,11 +56,11 @@ class Mask_Model(nn.Module):
     def mask_simple(self,user_embed, item_embed):
         user_num = user_embed.shape[0]
         item_num = item_embed.shape[0]
-        user_pad = torch.sparse.FloatTensor(torch.Size([user_num, user_num]))
-        item_pad = torch.sparse.FloatTensor(torch.Size([item_num, item_num]))
+        user_pad = torch.sparse.FloatTensor(torch.Size([user_num, user_num])).to(self.device)
+        item_pad = torch.sparse.FloatTensor(torch.Size([item_num, item_num])).to(self.device)
 
         M_ui = torch.cat([user_pad, self.rand_var_sparse], dim=1)
-        M_iu = torch.cat([self.rand_var_sparse, item_pad], dim=1)
+        M_iu = torch.cat([torch.transpose(self.rand_var_sparse,0,1), item_pad], dim=1)
 
         mask = torch.cat([M_ui, M_iu], dim=0)
         return mask

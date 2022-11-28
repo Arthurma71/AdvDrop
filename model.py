@@ -622,7 +622,7 @@ class INV_LGN(MF):
                 M = self.M.mask_attention(users_emb, items_emb)
             # case 1: simple mask
             if self.args.mask == 1:
-                M = self.M.mask_simple()
+                M = self.M.mask_simple(users_emb, items_emb)
             print("M grad:",M.requires_grad)
         else:
             M = None
@@ -630,6 +630,7 @@ class INV_LGN(MF):
             if mask:
                 g_droped = M * g_droped
             all_emb = torch.sparse.mm(g_droped, all_emb)
+            print(all_emb.shape)
             embs.append(all_emb)
         embs = torch.stack(embs, dim=1)
         light_out = torch.mean(embs, dim=1)
@@ -663,19 +664,19 @@ class INV_LGN(MF):
         mf_loss = torch.negative(torch.mean(maxi))
         reg_loss = self.decay * regularizer
 
-        if self.warmup:
-            inv_loss = torch.tensor(0).to(self.device)
-        else:
-            all_users_m, all_items_m = self.compute(True)
-            inv_loss = self.inv_loss(all_items, all_items_m, all_users, all_users_m, users)
+        # if self.warmup:
+        #     inv_loss = torch.tensor(0).to(self.device)
+        # else:
+        all_users_m, all_items_m = self.compute(True)
+        inv_loss = self.inv_loss(all_items, all_items_m, all_users, all_users_m, users)
 
         return mf_loss, reg_loss, inv_loss
     
 
     def forward_adaptive(self, users, pos_items, neg_items):
+        
         all_users_m, all_items_m = self.compute(True)
         all_users, all_items = self.compute()
-
         inv_loss = self.inv_loss(all_items, all_items_m, all_users, all_users_m, users)
         
         users_emb = all_users_m[users]
@@ -695,12 +696,12 @@ class INV_LGN(MF):
             self.embed_user.requires_grad_(False)
             self.embed_item.requires_grad_(False)
             for param in self.M.parameters():
-                param.requires_grad=False
+                param.requires_grad=True
         else:
             self.embed_user.requires_grad_(True)
             self.embed_item.requires_grad_(True)
             for param in self.M.parameters():
-                param.requires_grad=True
+                param.requires_grad=False
             
 
 '''
