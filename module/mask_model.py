@@ -25,7 +25,6 @@ class Mask_Model(nn.Module):
     
 
     def get_M_attention(self, u_i_matrix, user_embed, item_embed):
-        # assume graph is the user-positive item matrix
         Q = self.Q(user_embed)  # No.user x embedding
         K = self.K(item_embed)  # No.item x embedding
         weights = torch.matmul(Q, K.T)  # No.user x No.item
