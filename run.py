@@ -22,6 +22,15 @@ from torch.utils.data import Dataset, DataLoader
 from utils import *
 
 
+
+
+def train_step():
+    return
+
+def adaptive_step():
+    return
+
+
 if __name__ == '__main__':
 
     start = time.time()
@@ -29,26 +38,19 @@ if __name__ == '__main__':
     args = parse_args()
     data = Data(args)
     data.load_data()
-    device="cuda:"+str(args.cuda)
     device = torch.device(args.cuda)
     saveID = args.saveID
-    if args.modeltype == "INFONCE" or args.modeltype == 'INFONCE_batch':
-        saveID += "n_layers=" + str(args.n_layers) + "tau=" + str(args.tau)
-    if args.modeltype == "BC_LOSS" or args.modeltype == 'BC_LOSS_batch':
-        saveID += "n_layers=" + str(args.n_layers) + "tau1=" + str(args.tau1) + "tau2=" + str(args.tau2) + "w=" + str(args.w_lambda)
-
 
     if args.n_layers == 2 and args.modeltype != "LGN":
         base_path = './weights/{}/{}-LGN/{}'.format(args.dataset, args.modeltype, saveID)
     else:
         base_path = './weights/{}/{}/{}'.format(args.dataset, args.modeltype, saveID)
+    
 
-    if args.modeltype == 'LGN':
-        saveID += "n_layers=" + str(args.n_layers)
-        base_path = './weights/{}/{}/{}'.format(args.dataset, args.modeltype, saveID)
+    saveID += "n_layers=" + str(args.n_layers)
+    base_path = './weights/{}/{}/{}'.format(args.dataset, args.modeltype, saveID)
 
     checkpoint_buffer=[]
-    freeze_epoch=args.freeze_epoch if (args.modeltype=="BC_LOSS" or args.modeltype=="BC_LOSS_batch") else 0
     ensureDir(base_path)
 
     p_item = np.array([len(data.train_item_list[u]) if u in data.train_item_list else 0 for u in range(data.n_items)])
@@ -96,9 +98,8 @@ if __name__ == '__main__':
     eval_names=["valid","test_id", "test_ood" ]
 
     if args.modeltype == 'INV-LGN':
-        model = LGN(args, data)
+        model = INV_LGN(args, data)
 #    b=args.sample_beta
-
     model.cuda(device)
 
     model, start_epoch = restore_checkpoint(model, base_path, device)
@@ -119,93 +120,71 @@ if __name__ == '__main__':
 
     
     for epoch in range(start_epoch, args.epoch):
-
         # If the early stopping has been reached, restore to the best performance model
         if flag:
             break
 
-        # All models
-        running_loss, running_mf_loss, running_reg_loss, num_batches = 0, 0, 0, 0
-        # CausE
-        running_cf_loss = 0
-        # BC_LOSS
-        running_loss1, running_loss2 = 0, 0
+        
+        running_loss, running_mf_loss, running_reg_loss, running_inv_loss, num_batches = 0, 0, 0, 0
 
+        if epoch > args.pre_epochs:
+
+            avg_mf_loss_m, avg_inv_loss_adp, num_batches_adp = 0, 0, 0
+            
+            t1=time.time()
+            pbar = tqdm(enumerate(data.train_loader), total = len(data.train_loader))
+
+            # adaptive mask step
+            for batch_i, batch in pbar:
+                batch = [x.cuda(device) for x in batch]
+                users = batch[0]
+                pos_items = batch[1]
+                users_pop = batch[2]
+                pos_items_pop = batch[3]
+                pos_weights = batch[4]
+                neg_items = batch[5]
+                neg_items_pop = batch[6]
+
+                model.train()
+
+                mf_loss_m, inv_loss = model.forward_adaptive(users,pos_items,neg_items)
+
+                loss = -inv_loss + args.adaptive_tau * mf_loss_m
+
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+
+                avg_mf_loss_m += mf_loss_m.detach().item()
+                avg_inv_loss_adp += inv_loss.detach().item()
+            t2=time.time()
+
+            perf_str = 'Epoch %d [%.1fs]: adjust mask ==[%.5f=%.5f + %.5f]' % (
+            epoch, t2 - t1, running_loss / num_batches,
+            running_mf_loss / num_batches, running_reg_loss / num_batches, 
+            running_inv_loss/ num_batches)
+
+        
         t1=time.time()
 
         pbar = tqdm(enumerate(data.train_loader), total = len(data.train_loader))
 
-        for batch_i, batch in pbar:            
-
+        # training step
+        for batch_i, batch in pbar:
             batch = [x.cuda(device) for x in batch]
-
             users = batch[0]
             pos_items = batch[1]
-
-            if args.modeltype != 'CausE':
-                users_pop = batch[2]
-                pos_items_pop = batch[3]
-                pos_weights = batch[4]
-                if args.infonce == 0 or args.neg_sample != -1:
-                    neg_items = batch[5]
-                    neg_items_pop = batch[6]
+            users_pop = batch[2]
+            pos_items_pop = batch[3]
+            pos_weights = batch[4]
+            neg_items = batch[5]
+            neg_items_pop = batch[6]
 
             model.train()
-         
-            if args.modeltype == 'INFONCE_batch':
 
-                mf_loss, reg_loss = model(users, pos_items)
-                loss = mf_loss + reg_loss
+            mf_loss, reg_loss, inv_loss = model(users,pos_items,neg_items)
 
-            elif args.modeltype == 'INFONCE':
-
-                mf_loss, reg_loss = model(users, pos_items, neg_items)
-                loss = mf_loss + reg_loss
-            
-            elif args.modeltype == 'BC_LOSS_batch':
-                loss1, loss2, reg_loss, reg_loss_freeze, reg_loss_norm = model(users, pos_items, users_pop, pos_items_pop)
-                
-                if epoch < args.freeze_epoch:
-                    loss =  loss2 + reg_loss_freeze
-                else:
-                    model.freeze_pop()
-                    loss = loss1 + loss2 + reg_loss
-
-            elif args.modeltype == 'BC_LOSS':
-                loss1, loss2, reg_loss, reg_loss_freeze, reg_loss_norm  = model(users, pos_items, neg_items, \
-                                                                                users_pop, pos_items_pop, neg_items_pop)
-                
-                if epoch < args.freeze_epoch:
-                    loss =  loss2 + reg_loss_freeze
-                else:
-                    model.freeze_pop()
-                    loss = loss1 + loss2 + reg_loss
-
-            elif args.modeltype == 'IPS' or args.modeltype =='SAMREG':
-
-                mf_loss, reg_loss = model(users, pos_items, neg_items, pos_weights)
-                loss = mf_loss + reg_loss
-
-            elif args.modeltype == 'CausE':
-                neg_items = batch[2]
-                all_reg = torch.squeeze(batch[3].T.reshape([1, -1]))
-                all_ctrl = torch.squeeze(batch[4].T.reshape([1, -1]))
-                mf_loss, reg_loss, cf_loss = model(users, pos_items, neg_items, all_reg, all_ctrl)
-                loss = mf_loss + reg_loss + cf_loss 
-            
-            elif args.modeltype == "SimpleX":
-                mf_loss, reg_loss = model(users, pos_items, neg_items)
-                loss = mf_loss + reg_loss
-
-            
-            elif args.modeltype == "SimpleX_batch":
-                mf_loss, reg_loss = model(users, pos_items)
-                loss = mf_loss + reg_loss
-
-
-            else:
-                mf_loss, reg_loss = model(users, pos_items, neg_items)
-                loss = mf_loss + reg_loss
+            loss = mf_loss + reg_loss + args.inv_tau * inv_loss
 
             optimizer.zero_grad()
             loss.backward()
@@ -213,36 +192,21 @@ if __name__ == '__main__':
 
             running_loss += loss.detach().item()
             running_reg_loss += reg_loss.detach().item()
-
-            if args.modeltype != 'BC_LOSS' and args.modeltype != 'BC_LOSS_batch':
-                running_mf_loss += mf_loss.detach().item()
-            
-            if args.modeltype == 'CausE':
-                running_cf_loss += cf_loss.detach().item()
-
-            if args.modeltype == 'BC_LOSS' or args.modeltype == 'BC_LOSS_batch':
-                running_loss1 += loss1.detach().item()
-                running_loss2 += loss2.detach().item()
+            running_mf_loss += mf_loss.detach().item()
+            running_inv_loss += inv_loss.detach().item() * args.inv_tau
 
             num_batches += 1
-
+        
         t2=time.time()
+        
+
+        
 
         # Training data for one epoch
-        if args.modeltype == "CausE":
-            perf_str = 'Epoch %d [%.1fs]: train==[%.5f=%.5f + %.5f + %.5f]' % (
-                epoch, t2 - t1, running_loss / num_batches,
-                running_mf_loss / num_batches, running_reg_loss / num_batches, running_cf_loss / num_batches)
-        
-        elif args.modeltype=="BC_LOSS" or args.modeltype=="BC_LOSS_batch":
-            perf_str = 'Epoch %d [%.1fs]: train==[%.5f=%.5f + %.5f + %.5f]' % (
-                epoch, t2 - t1, running_loss / num_batches,
-                running_loss1 / num_batches, running_loss2 / num_batches, running_reg_loss / num_batches)
-
-        else:
-            perf_str = 'Epoch %d [%.1fs]: train==[%.5f=%.5f + %.5f]' % (
-                epoch, t2 - t1, running_loss / num_batches,
-                running_mf_loss / num_batches, running_reg_loss / num_batches)
+        perf_str = 'Epoch %d [%.1fs]: train==[%.5f=%.5f + %.5f + %.5f]' % (
+            epoch, t2 - t1, running_loss / num_batches,
+            running_mf_loss / num_batches, running_reg_loss / num_batches, 
+            running_inv_loss/ num_batches)
 
         with open(base_path + 'stats_{}.txt'.format(args.saveID),'a') as f:
             f.write(perf_str+"\n")

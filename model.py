@@ -619,7 +619,7 @@ class INV_LGN(MF):
             if self.args.mask == 0:
                 M = self.M.mask_attention(users_emb, items_emb)
             # case 1: simple mask
-            if self.args.mask == 0:
+            if self.args.mask == 1:
                 M = self.M.mask_simple()
         else:
             M = None
@@ -659,9 +659,26 @@ class INV_LGN(MF):
 
         mf_loss = torch.negative(torch.mean(maxi))
         reg_loss = self.decay * regularizer
-        inv_loss = self.inv_loss(all_users, all_users_m, all_items, all_items_m)
+        inv_loss = self.inv_loss(all_items, all_items_m, all_users, all_users_m, users)
 
         return mf_loss, reg_loss, inv_loss
+    
+
+    def forward_adaptive(self, users, pos_items, neg_items):
+        inv_loss = self.inv_loss(all_items, all_items_m, all_users, all_users_m, users)
+        all_users_m, all_items_m = self.compute(True)
+
+        users_emb = all_users_m[users]
+        pos_emb = all_items_m[pos_items]
+        neg_emb = all_items_m[neg_items]
+
+        pos_scores = torch.sum(torch.mul(users_emb, pos_emb), dim=1)  # users, pos_items, neg_items have the same shape
+        neg_scores = torch.sum(torch.mul(users_emb, neg_emb), dim=1)
+
+        maxi = torch.log(torch.sigmoid(pos_scores - neg_scores) + 1e-10)
+        mf_loss_m = torch.negative(torch.mean(maxi))
+
+        return mf_loss_m, inv_loss
 
 
 '''
