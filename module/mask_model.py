@@ -17,6 +17,7 @@ class Mask_Model(nn.Module):
             self.Q = nn.Linear(self.embed_size, self.embed_h)
             self.K = nn.Linear(self.embed_size, self.embed_h)
         if args.mask == 1:
+            print(u_i_matrix._values().shape[0])
             rand_var = torch.nn.Parameter(torch.ones(u_i_matrix._values().shape[0]).to(self.device))
             self.rand_var_sparse = torch.sparse_coo_tensor(u_i_matrix._indices(), rand_var, u_i_matrix.size())
         self.u_i_matrix = u_i_matrix
@@ -63,6 +64,7 @@ class Mask_Model(nn.Module):
         M_iu = torch.cat([torch.transpose(self.rand_var_sparse,0,1), item_pad], dim=1)
 
         mask = torch.cat([M_ui, M_iu], dim=0)
+        print(mask)
         return mask
 
 

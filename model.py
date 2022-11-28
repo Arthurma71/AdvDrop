@@ -4,6 +4,7 @@ import torch.nn as nn
 import math
 import numpy as np
 import torch.nn.functional as F
+import torch_sparse
 
 
 class MF(nn.Module):
@@ -629,7 +630,7 @@ class INV_LGN(MF):
         for layer in range(self.n_layers):
             if mask:
                 g_droped = M * g_droped
-            all_emb = torch.sparse.mm(g_droped, all_emb)
+            all_emb = torch_sparse.spmm(g_droped._indices(), g_droped._values(), g_droped.shape[0], g_droped.shape[1], all_emb) #torch.sparse.mm(g_droped, all_emb)
             print(all_emb.shape)
             embs.append(all_emb)
         embs = torch.stack(embs, dim=1)

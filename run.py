@@ -123,6 +123,7 @@ if __name__ == '__main__':
     flag = False
 
     optimizer = torch.optim.Adam([param for param in model.parameters() if param.requires_grad == True], lr=model.lr)
+    #optimizer = torch.optim.SparseAdam([param for param in model.parameters() if param.requires_grad == True], lr=model.lr)
 
     for epoch in range(start_epoch, args.epoch):
         # If the early stopping has been reached, restore to the best performance model
@@ -160,6 +161,8 @@ if __name__ == '__main__':
 
                 #print(inv_loss.requires_grad)
                 #print(mf_loss_m.requires_grad)
+
+
 
                 optimizer.zero_grad()
                 loss.backward()
@@ -202,6 +205,7 @@ if __name__ == '__main__':
 #
             loss = mf_loss + reg_loss + args.inv_tau * inv_loss
 
+            print(torch.cuda.memory_allocated(model.device))
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
