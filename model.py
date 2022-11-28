@@ -604,6 +604,7 @@ class INV_LGN(MF):
         self.n_layers = args.n_layers
         self.M = Mask_Model(args, self.Graph[:self.n_users, self.n_users:], self.emb_dim)
         self.inv_loss = Inv_Loss(args)
+        self.args = args
 
     def compute(self, mask=False):
         # TODO: add masked LGN propogation
@@ -613,11 +614,17 @@ class INV_LGN(MF):
 
         embs = [all_emb]
         g_droped = self.Graph
-
-        M = self.M.mask(users_emb, items_emb) if mask else None
+        if mask:
+            # case 0: attention mask
+            if self.args.mask == 0:
+                M = self.M.mask_attention(users_emb, items_emb)
+            # case 1: simple mask
+            if self.args.mask == 0:
+                M = self.M.mask_simple()
+        else:
+            M = None
         for layer in range(self.n_layers):
             if mask:
-                # g_droped = self.M.mask(g_droped)
                 g_droped = M * g_droped
             all_emb = torch.sparse.mm(g_droped, all_emb)
             embs.append(all_emb)
