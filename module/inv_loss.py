@@ -4,7 +4,7 @@ import torch
 
 class Inv_Loss(nn.Module):
     def __init__(self, args):
-        super().__init__(args)
+        super().__init__()
     
     def pearson_corr(self, rank1, rank2):
         numer = torch.sum((rank1-torch.mean(rank1,dim=1,keepdims=True))*(rank2-torch.mean(rank1,dim=1,keepdims=True)),dim=1)

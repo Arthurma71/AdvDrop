@@ -25,7 +25,7 @@ def parse_args():
                         help='Evaluate on Ks optimal items.')
     parser.add_argument('--log_interval', type=int, default=10,
                         help='log\'s interval epoch while training')
-    parser.add_argument('--verbose', type=int, default=5,
+    parser.add_argument('--verbose', type=int, default=1,
                         help='Interval of evaluation.')
     parser.add_argument('--saveID', type=str, default="",
                         help='Specify model save path.')
@@ -82,6 +82,26 @@ def parse_args():
     parser.add_argument('--w_lambda', type=float, default=0.5,
                         help='weight for combining l1 and l2.')
     parser.add_argument('--freeze_epoch',type=int,default=5)
+
+    #INV-LGN
+    parser.add_argument('--inv_tau', type=float, default=1,
+                        help='temperature parameter for inv loss in train step')
+    parser.add_argument('--adaptive_tau', type=float, default=1,
+                        help='temperature parameter for rec loss in adaptive step')
+    parser.add_argument('--gumble_tau', type=float, default=10,
+                        help='temperature parameter for rec loss in adaptive step')
+    parser.add_argument('--mask', type=int, default=0,
+                        help='indicator for mask type')
+    parser.add_argument('--att_dim', type=int, default=10,
+                        help='attention dim')
+    parser.add_argument('--pre_epochs', type=int, default=1,
+                        help='warmup epochs')
+    
+    
+    
+    
+    
+
 
 
     

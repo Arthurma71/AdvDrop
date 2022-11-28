@@ -108,7 +108,7 @@ class Data:
 
         self.train_item_list = collections.defaultdict(list)
         self.Graph = None
-        self.trainUser, self.trainItem, self.UserItemNet = [], [], []
+        self.trainUser, self.trainItem, self.UserItemNet = [], [], None
         self.n_interactions = 0
         self.test_ood_item_list = []
         self.test_id_item_list = []
@@ -254,48 +254,78 @@ class Data:
         data = torch.FloatTensor(coo.data)
         return torch.sparse.FloatTensor(index, data, torch.Size(coo.shape))
 
-    def getSparseGraph(self):
+    def getSparseGraph(self, ui_only=False):
 
-        if self.Graph is None:
-            try:
-                pre_adj_mat = sp.load_npz(self.path + '/s_pre_adj_mat.npz')
-                # dist_mat=np.load_npy(self.path+'/dist_mat.npy')
-                # dist_mat=dist_mat[:self.n_users, self.n_users:]
-                # self.dist_mat=np.exp(-(dist_mat-1)/2)+1
-                print("successfully loaded...")
-                norm_adj = pre_adj_mat
-            except:
-                print("generating adjacency matrix")
-                s = time.time()
-                adj_mat = sp.dok_matrix((self.n_users + self.n_items, self.n_users + self.n_items), dtype=np.float32)
-                adj_mat = adj_mat.tolil()
-                self.trainItem = np.array(self.trainItem)
-                self.trainUser = np.array(self.trainUser)
-                self.UserItemNet = csr_matrix((np.ones(len(self.trainUser)), (self.trainUser, self.trainItem)),
-                                              shape=(self.n_users, self.n_items))
-                R = self.UserItemNet.tolil()
-                adj_mat[:self.n_users, self.n_users:] = R
-                adj_mat[self.n_users:, :self.n_users] = R.T
-                adj_mat = adj_mat.tocsr()
-                sp.save_npz(self.path + '/adj_mat.npz', adj_mat)
+        if ui_only:
+            if self.UserItemNet is None:
+                try:
+                    # dist_mat=dist_mat[:self.n_users, self.n_users:]
+                    # self.dist_mat=np.exp(-(dist_mat-1)/2)+1
+                    ui_mat = sp.load_npz(self.path + '/ui_mat.npz')
+                    print("successfully loaded...")
+                    self.UserItemNet = ui_mat
+                    #print(self.UserItemNet)
+                except:
+                    print("generating adjacency matrix")
+                    s = time.time()
+                    adj_mat = sp.dok_matrix((self.n_users + self.n_items, self.n_users + self.n_items), dtype=np.float32)
+                    adj_mat = adj_mat.tolil()
+                    self.trainItem = np.array(self.trainItem)
+                    self.trainUser = np.array(self.trainUser)
+                    self.UserItemNet = csr_matrix((np.ones(len(self.trainUser)), (self.trainUser, self.trainItem)),
+                                                shape=(self.n_users, self.n_items))
+                    sp.save_npz(self.path + '/ui_mat.npz', self.UserItemNet)
+                
+            #print(self.UserItemNet)
+            adj_mat = self._convert_sp_mat_to_sp_tensor(self.UserItemNet)
+            adj_mat = adj_mat.coalesce().cuda(self.device)
 
-                adj_mat = adj_mat.todok()
+            return adj_mat
+
+        else:
+            if self.Graph is None:
+                try:
+                    pre_adj_mat = sp.load_npz(self.path + '/s_pre_adj_mat.npz')
+                    # dist_mat=np.load_npy(self.path+'/dist_mat.npy')
+                    # dist_mat=dist_mat[:self.n_users, self.n_users:]
+                    # self.dist_mat=np.exp(-(dist_mat-1)/2)+1
+                    ui_mat = sp.load_npz(self.path + '/ui_mat.npz')
+                    print("successfully loaded...")
+                    norm_adj = pre_adj_mat
+                    #print(pre_adj_mat)
+                except:
+                    print("generating adjacency matrix")
+                    s = time.time()
+                    adj_mat = sp.dok_matrix((self.n_users + self.n_items, self.n_users + self.n_items), dtype=np.float32)
+                    adj_mat = adj_mat.tolil()
+                    self.trainItem = np.array(self.trainItem)
+                    self.trainUser = np.array(self.trainUser)
+                    self.UserItemNet = csr_matrix((np.ones(len(self.trainUser)), (self.trainUser, self.trainItem)),
+                                                shape=(self.n_users, self.n_items))
+                    sp.save_npz(self.path + '/ui_mat.npz', self.UserItemNet)
+                    R = self.UserItemNet.tolil()
+                    adj_mat[:self.n_users, self.n_users:] = R
+                    adj_mat[self.n_users:, :self.n_users] = R.T
+                    adj_mat = adj_mat.tocsr()
+                    sp.save_npz(self.path + '/adj_mat.npz', adj_mat)
+
+                    adj_mat = adj_mat.todok()
 
 
 
-                rowsum = np.array(adj_mat.sum(axis=1))
-                d_inv = np.power(rowsum, -0.5).flatten()
-                d_inv[np.isinf(d_inv)] = 0.
-                d_mat = sp.diags(d_inv)
+                    rowsum = np.array(adj_mat.sum(axis=1))
+                    d_inv = np.power(rowsum, -0.5).flatten()
+                    d_inv[np.isinf(d_inv)] = 0.
+                    d_mat = sp.diags(d_inv)
 
-                norm_adj = d_mat.dot(adj_mat)
-                norm_adj = norm_adj.dot(d_mat)
-                norm_adj = norm_adj.tocsr()
-                end = time.time()
-                print(f"costing {end - s}s, saved norm_mat...")
-                sp.save_npz(self.path + '/s_pre_adj_mat.npz', norm_adj)
-            self.Graph = self._convert_sp_mat_to_sp_tensor(norm_adj)
-            self.Graph = self.Graph.coalesce().cuda(self.device)
+                    norm_adj = d_mat.dot(adj_mat)
+                    norm_adj = norm_adj.dot(d_mat)
+                    norm_adj = norm_adj.tocsr()
+                    end = time.time()
+                    print(f"costing {end - s}s, saved norm_mat...")
+                    sp.save_npz(self.path + '/s_pre_adj_mat.npz', norm_adj)
+                self.Graph = self._convert_sp_mat_to_sp_tensor(norm_adj)
+                self.Graph = self.Graph.coalesce().cuda(self.device)
 
         return self.Graph
   

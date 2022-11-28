@@ -106,7 +106,7 @@ if __name__ == '__main__':
     evaluators = [eval_valid, eval_test_id, eval_test_ood]
     eval_names = ["valid", "test_id", "test_ood"]
 
-    if args.modeltype == 'INV-LGN':
+    if args.modeltype == 'INV_LGN':
         model = INV_LGN(args, data)
     #    b=args.sample_beta
     model.cuda(device)
@@ -128,14 +128,16 @@ if __name__ == '__main__':
         # If the early stopping has been reached, restore to the best performance model
         if flag:
             break
-        running_loss, running_mf_loss, running_reg_loss, running_inv_loss, num_batches = 0, 0, 0, 0
+        running_loss, running_mf_loss, running_reg_loss, running_inv_loss, num_batches = 0, 0, 0, 0, 0
 
-        if epoch > args.pre_epochs:
+        if epoch >= args.pre_epochs:
+            #model.warmup = False
 
             running_loss_adp, avg_mf_loss_m, avg_inv_loss_adp, num_batches_adp = 0, 0, 0, 0
 
             t1 = time.time()
             pbar = tqdm(enumerate(data.train_loader), total=len(data.train_loader))
+            model.freeze_args(True)
 
             # adaptive mask step
             for batch_i, batch in pbar:
@@ -154,11 +156,14 @@ if __name__ == '__main__':
 
                 loss = -inv_loss + args.adaptive_tau * mf_loss_m
 
+                print(inv_loss.requires_grad)
+                print(mf_loss_m.requires_grad)
+
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
 
-                avg_mf_loss_m += mf_loss_m.detach().item()
+                avg_mf_loss_m += mf_loss_m.detach().item() * args.adaptive_tau
                 avg_inv_loss_adp += inv_loss.detach().item()
                 running_loss_adp += loss.detach().item()
                 num_batches_adp += 1
@@ -166,12 +171,15 @@ if __name__ == '__main__':
             t2 = time.time()
             perf_str = 'Epoch %d [%.1fs]: adjust mask ==[%.5f=%.5f + %.5f]' % (
                 epoch, t2 - t1, running_loss_adp / num_batches_adp,
-                avg_mf_loss_m / num_batches_adp, avg_inv_loss_adp / num_batches_adp)
-
+                avg_mf_loss_m / num_batches_adp, -avg_inv_loss_adp / num_batches_adp)
+            
+            with open(base_path + 'stats_{}.txt'.format(args.saveID), 'a') as f:
+                f.write(perf_str + "\n")
         t1 = time.time()
 
         pbar = tqdm(enumerate(data.train_loader), total=len(data.train_loader))
 
+        model.freeze_args(False)
         # training step
         for batch_i, batch in pbar:
             batch = [x.cuda(device) for x in batch]
@@ -187,6 +195,9 @@ if __name__ == '__main__':
 
             mf_loss, reg_loss, inv_loss = model(users, pos_items, neg_items)
 
+            #print(mf_loss.requires_grad)
+            #print(reg_loss.requires_grad)
+#
             loss = mf_loss + reg_loss + args.inv_tau * inv_loss
 
             optimizer.zero_grad()

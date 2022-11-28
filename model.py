@@ -601,10 +601,12 @@ class INV_LGN(MF):
     def __init__(self, args, data):
         super().__init__(args, data)
         self.Graph = data.getSparseGraph()
+        self.adj_mat = data.getSparseGraph(True)
         self.n_layers = args.n_layers
-        self.M = Mask_Model(args, self.Graph[:self.n_users, self.n_users:], self.emb_dim)
+        self.M = Mask_Model(args, self.adj_mat)
         self.inv_loss = Inv_Loss(args)
         self.args = args
+        self.warmup = True
 
     def compute(self, mask=False):
         # TODO: add masked LGN propogation
@@ -621,6 +623,7 @@ class INV_LGN(MF):
             # case 1: simple mask
             if self.args.mask == 1:
                 M = self.M.mask_simple()
+            print("M grad:",M.requires_grad)
         else:
             M = None
         for layer in range(self.n_layers):
@@ -651,7 +654,7 @@ class INV_LGN(MF):
         pos_scores = torch.sum(torch.mul(users_emb, pos_emb), dim=1)  # users, pos_items, neg_items have the same shape
         neg_scores = torch.sum(torch.mul(users_emb, neg_emb), dim=1)
 
-        all_users_m, all_items_m = self.compute(True)
+        
 
         regularizer = self.regularize(users, pos_items, neg_items) / self.batch_size
 
@@ -659,15 +662,22 @@ class INV_LGN(MF):
 
         mf_loss = torch.negative(torch.mean(maxi))
         reg_loss = self.decay * regularizer
-        inv_loss = self.inv_loss(all_items, all_items_m, all_users, all_users_m, users)
+
+        if self.warmup:
+            inv_loss = torch.tensor(0).to(self.device)
+        else:
+            all_users_m, all_items_m = self.compute(True)
+            inv_loss = self.inv_loss(all_items, all_items_m, all_users, all_users_m, users)
 
         return mf_loss, reg_loss, inv_loss
     
 
     def forward_adaptive(self, users, pos_items, neg_items):
-        inv_loss = self.inv_loss(all_items, all_items_m, all_users, all_users_m, users)
         all_users_m, all_items_m = self.compute(True)
+        all_users, all_items = self.compute()
 
+        inv_loss = self.inv_loss(all_items, all_items_m, all_users, all_users_m, users)
+        
         users_emb = all_users_m[users]
         pos_emb = all_items_m[pos_items]
         neg_emb = all_items_m[neg_items]
@@ -679,7 +689,19 @@ class INV_LGN(MF):
         mf_loss_m = torch.negative(torch.mean(maxi))
 
         return mf_loss_m, inv_loss
-
+    
+    def freeze_args(self,flag):
+        if flag:
+            self.embed_user.requires_grad_(False)
+            self.embed_item.requires_grad_(False)
+            for param in self.M.parameters():
+                param.requires_grad=False
+        else:
+            self.embed_user.requires_grad_(True)
+            self.embed_item.requires_grad_(True)
+            for param in self.M.parameters():
+                param.requires_grad=True
+            
 
 '''
 class BPRMF(LGN):
