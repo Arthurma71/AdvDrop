@@ -96,6 +96,8 @@ def parse_args():
                         help='attention dim')
     parser.add_argument('--pre_epochs', type=int, default=1,
                         help='warmup epochs')
+    parser.add_argument('--num_samples', type=int, default=100,
+                        help='No. samples in inv loss')
     
     
     
