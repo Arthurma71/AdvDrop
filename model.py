@@ -624,14 +624,15 @@ class INV_LGN(MF):
             # case 1: simple mask
             if self.args.mask == 1:
                 M = self.M.mask_simple(users_emb, items_emb)
-            print("M grad:",M.requires_grad)
+            # print("M grad:",M.requires_grad)
         else:
             M = None
         for layer in range(self.n_layers):
             if mask:
                 g_droped = M * g_droped
-            all_emb = torch_sparse.spmm(g_droped._indices(), g_droped._values(), g_droped.shape[0], g_droped.shape[1], all_emb) #torch.sparse.mm(g_droped, all_emb)
-            print(all_emb.shape)
+            all_emb = torch_sparse.spmm(g_droped._indices(), g_droped._values(), g_droped.shape[0], g_droped.shape[1],
+                                        all_emb)  # torch.sparse.mm(g_droped, all_emb)
+            # print(all_emb.shape)
             embs.append(all_emb)
         embs = torch.stack(embs, dim=1)
         light_out = torch.mean(embs, dim=1)
@@ -656,8 +657,6 @@ class INV_LGN(MF):
         pos_scores = torch.sum(torch.mul(users_emb, pos_emb), dim=1)  # users, pos_items, neg_items have the same shape
         neg_scores = torch.sum(torch.mul(users_emb, neg_emb), dim=1)
 
-        
-
         regularizer = self.regularize(users, pos_items, neg_items) / self.batch_size
 
         maxi = torch.log(torch.sigmoid(pos_scores - neg_scores) + 1e-10)
@@ -672,14 +671,13 @@ class INV_LGN(MF):
         inv_loss = self.inv_loss(all_items, all_items_m, all_users, all_users_m, users)
 
         return mf_loss, reg_loss, inv_loss
-    
 
     def forward_adaptive(self, users, pos_items, neg_items):
-        
+
         all_users_m, all_items_m = self.compute(True)
         all_users, all_items = self.compute()
         inv_loss = self.inv_loss(all_items, all_items_m, all_users, all_users_m, users)
-        
+
         users_emb = all_users_m[users]
         pos_emb = all_items_m[pos_items]
         neg_emb = all_items_m[neg_items]
@@ -691,19 +689,19 @@ class INV_LGN(MF):
         mf_loss_m = torch.negative(torch.mean(maxi))
 
         return mf_loss_m, inv_loss
-    
-    def freeze_args(self,flag):
+
+    def freeze_args(self, flag):
         if flag:
             self.embed_user.requires_grad_(False)
             self.embed_item.requires_grad_(False)
             for param in self.M.parameters():
-                param.requires_grad=True
+                param.requires_grad = True
         else:
             self.embed_user.requires_grad_(True)
             self.embed_item.requires_grad_(True)
             for param in self.M.parameters():
-                param.requires_grad=False
-            
+                param.requires_grad = False
+
 
 '''
 class BPRMF(LGN):

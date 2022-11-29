@@ -205,7 +205,7 @@ if __name__ == '__main__':
 #
             loss = mf_loss + reg_loss + args.inv_tau * inv_loss
 
-            print(torch.cuda.memory_allocated(model.device))
+            # print(torch.cuda.memory_allocated(model.device))
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
