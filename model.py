@@ -604,7 +604,7 @@ class INV_LGN(MF):
         self.Graph = data.getSparseGraph()
         self.adj_mat = data.getSparseGraph(True)
         self.n_layers = args.n_layers
-        self.M = Mask_Model(args, self.adj_mat)
+        self.M = Mask_Model(args, self.adj_mat,self.Graph)
         self.inv_loss = Inv_Loss(args)
         self.args = args
         self.warmup = True
@@ -624,14 +624,22 @@ class INV_LGN(MF):
             # case 1: simple mask
             if self.args.mask == 1:
                 M = self.M.mask_simple(users_emb, items_emb)
-            # print("M grad:",M.requires_grad)
+            print("M grad:",M.requires_grad)
         else:
             M = None
+        
+        # if mask:
+        #     g_droped_v = M.coalesce().values()* g_droped.values()
+        #     print("g_droped grad:",g_droped.requires_grad)
         for layer in range(self.n_layers):
-            if mask:
-                g_droped = M * g_droped
-            all_emb = torch_sparse.spmm(g_droped._indices(), g_droped._values(), g_droped.shape[0], g_droped.shape[1],
+            # if mask:
+                # print(f"embed_{layer} grad before:",all_emb.requires_grad)
+            all_emb = torch_sparse.spmm(g_droped.indices(), g_droped.values(), g_droped.shape[0], g_droped.shape[1],
                                         all_emb)  # torch.sparse.mm(g_droped, all_emb)
+            
+            if mask and layer == self.n_layers - 1:
+                all_emb = torch_sparse.spmm(g_droped.indices(),  M.coalesce().values()* g_droped.values(), g_droped.shape[0], g_droped.shape[1],
+                                        all_emb) 
             # print(all_emb.shape)
             embs.append(all_emb)
         embs = torch.stack(embs, dim=1)
@@ -664,11 +672,11 @@ class INV_LGN(MF):
         mf_loss = torch.negative(torch.mean(maxi))
         reg_loss = self.decay * regularizer
 
-        # if self.warmup:
-        #     inv_loss = torch.tensor(0).to(self.device)
-        # else:
-        all_users_m, all_items_m = self.compute(True)
-        inv_loss = self.inv_loss(all_items, all_items_m, all_users, all_users_m, users)
+        if self.warmup:
+            inv_loss = torch.tensor(0).to(self.device)
+        else:
+            all_users_m, all_items_m = self.compute(True)
+            inv_loss = self.inv_loss(all_items, all_items_m, all_users, all_users_m, users)
 
         return mf_loss, reg_loss, inv_loss
 
