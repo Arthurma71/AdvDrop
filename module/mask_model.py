@@ -2,10 +2,24 @@ import torch.nn as nn
 import torch
 from module.inv_loss import *
 from utils import sparse_dense_mul
+from typing import Optional, Tuple, Union
+
+import torch
+import torch.nn.functional as F
+from torch import Tensor
+from torch.nn import Parameter
+from torch_sparse import SparseTensor, set_diag
+
+from torch_geometric.nn.conv import MessagePassing
+from torch_geometric.nn.dense.linear import Linear
+from torch_geometric.typing import NoneType  # noqa
+from torch_geometric.typing import Adj, OptPairTensor, OptTensor, Size
+from torch_geometric.utils import add_self_loops, remove_self_loops, softmax
+from torch_geometric.nn.inits import glorot, zeros
 
 
 class Mask_Model(nn.Module):
-    def __init__(self, args, u_i_matrix,graph):
+    def __init__(self, args, u_i_matrix, graph):
         super().__init__()
         # TODO: Modify M with Attention
         self.inv_loss = Inv_Loss(args)
@@ -47,7 +61,7 @@ class Mask_Model(nn.Module):
         M_iu = torch.cat([M_iu, item_pad], dim=1)
 
         mask = torch.cat([M_ui, M_iu], dim=0)
-        mask = torch.sparse_coo_tensor(mask._indices(),torch.cat[M_ui.values(),M_iu.values()],mask.size())
+        mask = torch.sparse_coo_tensor(mask._indices(), torch.cat[M_ui.values(), M_iu.values()], mask.size())
         return mask
 
     def mask_simple(self, user_embed, item_embed):
@@ -61,7 +75,50 @@ class Mask_Model(nn.Module):
 
         # mask = torch.cat([M_ui, M_iu], dim=0)
         mask = torch.sparse_coo_tensor(self.graph._indices(), self.rand_var, self.graph.size())
-        #print("sparse var grad:",self.rand_var_sparse.requires_grad)
-        #print("var grad:",self.rand_var.requires_grad)
+        # print("sparse var grad:",self.rand_var_sparse.requires_grad)
+        # print("var grad:",self.rand_var.requires_grad)
 
         return mask
+
+
+class Mask_Model_Geometric(MessagePassing):
+    def __init__(self, args, add_self_loops: bool = True,
+                 **kwargs):
+        kwargs.setdefault('aggr', 'add')
+        super().__init__(**kwargs)
+        self.embed_size = args.embed_size
+        self.embed_h = args.att_dim
+        self.Q = Linear(self.embed_size, self.embed_h)
+        self.K = Linear(self.embed_size, self.embed_h)
+        self.add_self_loops = add_self_loops
+        self.gumble_tau = args.gumble_tau
+        self.device = torch.device(args.cuda)
+
+    def forward(self, x: Tensor, edge_index: Adj) -> Tensor:
+        if self.add_self_loops:
+            if isinstance(edge_index, Tensor):
+                edge_index, _ = remove_self_loops(edge_index)
+                edge_index, _ = add_self_loops(edge_index,
+                                               num_nodes=x.size(self.node_dim))
+            elif isinstance(edge_index, SparseTensor):
+                edge_index = set_diag(edge_index)
+
+        x_norm = F.normalize(x, p=2., dim=-1)
+
+        # propagate_type: (x: Tensor, x_norm: Tensor)
+        return self.propagate(edge_index, x=x, x_norm=x_norm, size=None)
+
+    def message(self, x_j: Tensor, x_norm_i: Tensor, x_norm_j: Tensor,
+                index: Tensor, ptr: OptTensor,
+                size_i: Optional[int]) -> Tensor:
+        # apply transformation layers
+        Query = self.Q(x_norm_i)
+        Keys = self.K(x_norm_j)
+        # dot product of each query-key pair
+        alpha = (Keys * Query).sum(dim=-1)
+        # apply gumble
+        gumble_G = torch.log(-torch.log(torch.rand(alpha.shape[0]).to(self.device)))
+        alpha = (alpha - gumble_G) / self.gumble_tau
+        # softmax
+        alpha = softmax(alpha, index, ptr, size_i)
+        return x_j * alpha.view(-1, 1)
