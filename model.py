@@ -603,8 +603,10 @@ class INV_LGN(MF):
         super().__init__(args, data)
         self.Graph = data.getSparseGraph()
         self.adj_mat = data.getSparseGraph(True)
+        self.edge_index = data.getEdgeIndex()
         self.n_layers = args.n_layers
         self.M = Mask_Model(args, self.adj_mat,self.Graph)
+        self.new_M = Mask_Model_Geometric(args)
         self.inv_loss = Inv_Loss(args)
         self.args = args
         self.warmup = True
@@ -617,29 +619,30 @@ class INV_LGN(MF):
 
         embs = [all_emb]
         g_droped = self.Graph
-        if mask:
-            # case 0: attention mask
-            if self.args.mask == 0:
-                M = self.M.mask_attention(users_emb, items_emb)
-            # case 1: simple mask
-            if self.args.mask == 1:
-                M = self.M.mask_simple(users_emb, items_emb)
-            print("M grad:",M.requires_grad)
-        else:
-            M = None
+        # if mask:
+        #     # case 0: attention mask
+        #     if self.args.mask == 0:
+        #         M = self.M.mask_attention(users_emb, items_emb)
+        #     # case 1: simple mask
+        #     if self.args.mask == 1:
+        #         M = self.M.mask_simple(users_emb, items_emb)
+        #     print("M grad:",M.requires_grad)
+        # else:
+        #     M = None
         
         # if mask:
         #     g_droped_v = M.coalesce().values()* g_droped.values()
         #     print("g_droped grad:",g_droped.requires_grad)
         for layer in range(self.n_layers):
-            # if mask:
-                # print(f"embed_{layer} grad before:",all_emb.requires_grad)
-            all_emb = torch_sparse.spmm(g_droped.indices(), g_droped.values(), g_droped.shape[0], g_droped.shape[1],
-                                        all_emb)  # torch.sparse.mm(g_droped, all_emb)
-            
-            if mask and layer == self.n_layers - 1:
-                all_emb = torch_sparse.spmm(g_droped.indices(),  M.coalesce().values()* g_droped.values(), g_droped.shape[0], g_droped.shape[1],
-                                        all_emb) 
+            # all_emb = torch_sparse.spmm(g_droped.indices(), g_droped.values(), g_droped.shape[0], g_droped.shape[1],
+            #                             all_emb)  # torch.sparse.mm(g_droped, all_emb)
+            #
+            # if mask and layer == self.n_layers - 1:
+            #     all_emb = torch_sparse.spmm(g_droped.indices(),  M.coalesce().values()* g_droped.values(), g_droped.shape[0], g_droped.shape[1],
+            #                             all_emb)
+
+            # TODO: check(haven't run)
+            all_emb = self.new_M(embs, self.edge_index)
             # print(all_emb.shape)
             embs.append(all_emb)
         embs = torch.stack(embs, dim=1)
