@@ -254,6 +254,16 @@ class Data:
         data = torch.FloatTensor(coo.data)
         return torch.sparse.FloatTensor(index, data, torch.Size(coo.shape))
 
+    def getEdgeIndex(self):
+        user_item_sparse_matrix = self.getSparseGraph(ui_only=True)
+        # info flow: from user to item
+        user_item_index = user_item_sparse_matrix.coalesce().indices()
+        # item_index = o_item_index + num_users
+        user_item_index[1] += user_item_sparse_matrix.shape[0]
+        # info flow: from item to user
+        item_user_index = torch.cat((user_item_index[1].reshape(1, -1), user_item_index[0].reshape(1, -1)), axis=0)
+        return torch.cat((user_item_index, item_user_index), axis=1)
+
     def getSparseGraph(self, ui_only=False):
 
         if ui_only:
