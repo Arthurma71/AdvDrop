@@ -99,16 +99,6 @@ def parse_args():
     parser.add_argument('--num_samples', type=int, default=100,
                         help='No. samples in inv loss')
     
-    
-    
-    
-    
-
-
-
-    
-
-    
     return parser.parse_args()
 
 

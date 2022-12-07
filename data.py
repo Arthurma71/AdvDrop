@@ -255,14 +255,8 @@ class Data:
         return torch.sparse.FloatTensor(index, data, torch.Size(coo.shape))
 
     def getEdgeIndex(self):
-        user_item_sparse_matrix = self.getSparseGraph(ui_only=True)
-        # info flow: from user to item
-        user_item_index = user_item_sparse_matrix.coalesce().indices()
-        # item_index = o_item_index + num_users
-        user_item_index[1] += user_item_sparse_matrix.shape[0]
-        # info flow: from item to user
-        item_user_index = torch.cat((user_item_index[1].reshape(1, -1), user_item_index[0].reshape(1, -1)), axis=0)
-        return torch.cat((user_item_index, item_user_index), axis=1)
+        user_item_sparse_matrix = self.getSparseGraph()
+        return user_item_sparse_matrix.coalesce().indices()
 
     def getSparseGraph(self, ui_only=False):
 
@@ -320,9 +314,6 @@ class Data:
                     sp.save_npz(self.path + '/adj_mat.npz', adj_mat)
 
                     adj_mat = adj_mat.todok()
-
-
-
                     rowsum = np.array(adj_mat.sum(axis=1))
                     d_inv = np.power(rowsum, -0.5).flatten()
                     d_inv[np.isinf(d_inv)] = 0.
@@ -335,7 +326,7 @@ class Data:
                     print(f"costing {end - s}s, saved norm_mat...")
                     sp.save_npz(self.path + '/s_pre_adj_mat.npz', norm_adj)
                 self.Graph = self._convert_sp_mat_to_sp_tensor(norm_adj)
-                self.Graph = self.Graph.coalesce().cuda(self.device)
+                self.Graph = self.Graph.coalesce()
 
         return self.Graph
   

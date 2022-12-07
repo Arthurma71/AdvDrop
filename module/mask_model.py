@@ -1,5 +1,3 @@
-import torch.nn as nn
-import torch
 from module.inv_loss import *
 from utils import sparse_dense_mul
 from typing import Optional, Tuple, Union
@@ -7,7 +5,6 @@ from typing import Optional, Tuple, Union
 import torch
 import torch.nn.functional as F
 from torch import Tensor
-from torch.nn import Parameter
 from torch_sparse import SparseTensor, set_diag
 
 from torch_geometric.nn.conv import MessagePassing
@@ -82,10 +79,8 @@ class Mask_Model(nn.Module):
 
 
 class Mask_Model_Geometric(MessagePassing):
-    def __init__(self, args, add_self_loops: bool = True,
-                 **kwargs):
-        kwargs.setdefault('aggr', 'add')
-        super().__init__(**kwargs)
+    def __init__(self, args):
+        super().__init__(aggr='add')
         self.embed_size = args.embed_size
         self.embed_h = args.att_dim
         self.Q = Linear(self.embed_size, self.embed_h)
@@ -95,18 +90,9 @@ class Mask_Model_Geometric(MessagePassing):
         self.device = torch.device(args.cuda)
 
     def forward(self, x: Tensor, edge_index: Adj) -> Tensor:
-        if self.add_self_loops:
-            if isinstance(edge_index, Tensor):
-                edge_index, _ = remove_self_loops(edge_index)
-                edge_index, _ = add_self_loops(edge_index,
-                                               num_nodes=x.size(self.node_dim))
-            elif isinstance(edge_index, SparseTensor):
-                edge_index = set_diag(edge_index)
-
         x_norm = F.normalize(x, p=2., dim=-1)
-
         # propagate_type: (x: Tensor, x_norm: Tensor)
-        return self.propagate(edge_index, x=x, x_norm=x_norm, size=None)
+        return self.propagate(edge_index, x=x, x_norm = x_norm, size=None)
 
     def message(self, x_j: Tensor, x_norm_i: Tensor, x_norm_j: Tensor,
                 index: Tensor, ptr: OptTensor,
@@ -122,3 +108,16 @@ class Mask_Model_Geometric(MessagePassing):
         # softmax
         alpha = softmax(alpha, index, ptr, size_i)
         return x_j * alpha.view(-1, 1)
+
+
+class GCN(MessagePassing):
+    def __init__(self, args):
+        super().__init__(aggr='add')
+
+    def forward(self, x: Tensor, edge_index: Adj) -> Tensor:
+        # x_norm = F.normalize(x, p=2., dim=-1)
+        return self.propagate(edge_index, x=x, size=None)
+
+    def message(self, x_j: Tensor) -> Tensor:
+        # Constructs messages from node :math:`j` to node :math:`i`
+        return x_j

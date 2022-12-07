@@ -5,6 +5,8 @@ import math
 import numpy as np
 import torch.nn.functional as F
 import torch_sparse
+from module.mask_model import *
+from module.inv_loss import *
 
 
 class MF(nn.Module):
@@ -594,22 +596,26 @@ class SimpleX_batch(LGN):
         return mf_loss, reg_loss
 
 
-from module.mask_model import *
-from module.inv_loss import *
+
 
 
 class INV_LGN(MF):
     def __init__(self, args, data):
         super().__init__(args, data)
-        self.Graph = data.getSparseGraph()
-        self.adj_mat = data.getSparseGraph(True)
-        self.edge_index = data.getEdgeIndex()
+        # self.Graph = data.getSparseGraph()
+        # U-I matrix
+        # self.adj_mat = data.getSparseGraph(True)
+        # (U+I) x (U+I) matrix
+        # self.adj_mat = data.getSparseGraph()
+        self.edge_index = data.getEdgeIndex().cuda(self.device)
         self.n_layers = args.n_layers
-        self.M = Mask_Model(args, self.adj_mat,self.Graph)
+        # self.M = Mask_Model(args, self.adj_mat,self.Graph)
         self.new_M = Mask_Model_Geometric(args)
+        self.GCN = GCN(args)
         self.inv_loss = Inv_Loss(args)
         self.args = args
         self.warmup = True
+
 
     def compute(self, mask=False):
         # TODO: add masked LGN propogation
@@ -618,7 +624,6 @@ class INV_LGN(MF):
         all_emb = torch.cat([users_emb, items_emb])
 
         embs = [all_emb]
-        g_droped = self.Graph
         # if mask:
         #     # case 0: attention mask
         #     if self.args.mask == 0:
@@ -636,15 +641,12 @@ class INV_LGN(MF):
         for layer in range(self.n_layers):
             # all_emb = torch_sparse.spmm(g_droped.indices(), g_droped.values(), g_droped.shape[0], g_droped.shape[1],
             #                             all_emb)  # torch.sparse.mm(g_droped, all_emb)
-            #
             # if mask and layer == self.n_layers - 1:
             #     all_emb = torch_sparse.spmm(g_droped.indices(),  M.coalesce().values()* g_droped.values(), g_droped.shape[0], g_droped.shape[1],
             #                             all_emb)
-
-            # TODO: check(haven't run)
-            all_emb = self.new_M(embs, self.edge_index)
-            # print(all_emb.shape)
+            all_emb = self.new_M(all_emb, self.edge_index) if mask else self.GCN(all_emb, self.edge_index)
             embs.append(all_emb)
+
         embs = torch.stack(embs, dim=1)
         light_out = torch.mean(embs, dim=1)
         users, items = torch.split(light_out, [self.n_users, self.n_items])
@@ -705,12 +707,12 @@ class INV_LGN(MF):
         if flag:
             self.embed_user.requires_grad_(False)
             self.embed_item.requires_grad_(False)
-            for param in self.M.parameters():
+            for param in self.new_M.parameters():
                 param.requires_grad = True
         else:
             self.embed_user.requires_grad_(True)
             self.embed_item.requires_grad_(True)
-            for param in self.M.parameters():
+            for param in self.new_M.parameters():
                 param.requires_grad = False
 
 
