@@ -13,6 +13,7 @@ from torch_geometric.typing import NoneType  # noqa
 from torch_geometric.typing import Adj, OptPairTensor, OptTensor, Size
 from torch_geometric.utils import add_self_loops, remove_self_loops, softmax
 from torch_geometric.nn.inits import glorot, zeros
+from torch_geometric.utils import add_self_loops, degree
 
 
 class Mask_Model(nn.Module):
@@ -115,9 +116,13 @@ class GCN(MessagePassing):
         super().__init__(aggr='add')
 
     def forward(self, x: Tensor, edge_index: Adj) -> Tensor:
-        # x_norm = F.normalize(x, p=2., dim=-1)
-        return self.propagate(edge_index, x=x, size=None)
+        row, col = edge_index
+        deg = degree(col, x.size(0), dtype=x.dtype)
+        deg_inv_sqrt = deg.pow(-0.5)
+        deg_inv_sqrt[deg_inv_sqrt == float('inf')] = 0
+        norm = deg_inv_sqrt[row] * deg_inv_sqrt[col]
+        return self.propagate(edge_index, x=x, norm=norm, size=None)
 
-    def message(self, x_j: Tensor) -> Tensor:
+    def message(self, x_j: Tensor, norm) -> Tensor:
         # Constructs messages from node :math:`j` to node :math:`i`
-        return x_j
+        return norm.view(-1, 1) * x_j
