@@ -25,11 +25,11 @@ class Mask_Model(nn.Module):
         self.embed_h = args.att_dim
         self.device = torch.device(args.cuda)
         self.graph = graph
-        if args.mask == 0:
+        if args.mask == 1:
             self.gumble_tau = args.gumble_tau
             self.Q = nn.Linear(self.embed_size, self.embed_h)
             self.K = nn.Linear(self.embed_size, self.embed_h)
-        if args.mask == 1:
+        if args.mask == 0:
             self.rand_var = torch.nn.Parameter(torch.ones_like(graph._values())).to(self.device)
         self.u_i_matrix = u_i_matrix
         # self.V = nn.Linear(embed_h, embed_h)

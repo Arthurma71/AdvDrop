@@ -602,20 +602,22 @@ class SimpleX_batch(LGN):
 class INV_LGN(MF):
     def __init__(self, args, data):
         super().__init__(args, data)
-        # self.Graph = data.getSparseGraph()
-        # U-I matrix
-        # self.adj_mat = data.getSparseGraph(True)
+        if args.is_geometric:
+            self.edge_index = data.getEdgeIndex().cuda(self.device)
+            self.M = Mask_Model_Geometric(args)
+            self.GCN = GCN(args)
+        else:
+            self.Graph = data.getSparseGraph().cuda(self.device)
+            # U-I matrix
+            self.adj_mat = data.getSparseGraph(ui_only=True).cuda(self.device)
+            self.M = Mask_Model(args, self.adj_mat, self.Graph)
+
         # (U+I) x (U+I) matrix
         # self.adj_mat = data.getSparseGraph()
-        self.edge_index = data.getEdgeIndex().cuda(self.device)
         self.n_layers = args.n_layers
-        # self.M = Mask_Model(args, self.adj_mat,self.Graph)
-        self.new_M = Mask_Model_Geometric(args)
-        self.GCN = GCN(args)
         self.inv_loss = Inv_Loss(args)
         self.args = args
         self.warmup = True
-
 
     def compute(self, mask=False):
         # TODO: add masked LGN propogation
@@ -624,33 +626,36 @@ class INV_LGN(MF):
         all_emb = torch.cat([users_emb, items_emb])
 
         embs = [all_emb]
-        # if mask:
-        #     # case 0: attention mask
-        #     if self.args.mask == 0:
-        #         M = self.M.mask_attention(users_emb, items_emb)
-        #     # case 1: simple mask
-        #     if self.args.mask == 1:
-        #         M = self.M.mask_simple(users_emb, items_emb)
-        #     print("M grad:",M.requires_grad)
-        # else:
-        #     M = None
-        
-        # if mask:
-        #     g_droped_v = M.coalesce().values()* g_droped.values()
-        #     print("g_droped grad:",g_droped.requires_grad)
-        for layer in range(self.n_layers):
-            # all_emb = torch_sparse.spmm(g_droped.indices(), g_droped.values(), g_droped.shape[0], g_droped.shape[1],
-            #                             all_emb)  # torch.sparse.mm(g_droped, all_emb)
-            # if mask and layer == self.n_layers - 1:
-            #     all_emb = torch_sparse.spmm(g_droped.indices(),  M.coalesce().values()* g_droped.values(), g_droped.shape[0], g_droped.shape[1],
-            #                             all_emb)
-            all_emb = self.new_M(all_emb, self.edge_index) if mask else self.GCN(all_emb, self.edge_index)
-            embs.append(all_emb)
+        if self.args.is_geometric:
+            for layer in range(self.n_layers):
+                all_emb = self.M(all_emb, self.edge_index) if mask else self.GCN(all_emb, self.edge_index)
+                embs.append(all_emb)
+        else:
+            g_droped = self.Graph
+            if mask:
+                # case 0: simple mask
+                if self.args.mask == 0:
+                    M = self.M.mask_simple(users_emb, items_emb)
+                # case 1: attention mask
+                if self.args.mask == 1:
+                    M = self.M.mask_attention(users_emb, items_emb)
+            else:
+                M = None
+
+            for layer in range(self.n_layers):
+                all_emb = torch_sparse.spmm(g_droped.indices(), M.coalesce().values() * g_droped.values(),
+                                                g_droped.shape[0], g_droped.shape[1],
+                                                all_emb) if mask else torch_sparse.spmm(g_droped.indices(), g_droped.values(), g_droped.shape[0], g_droped.shape[1],
+                                            all_emb)
+                # torch.sparse.mm(g_droped, all_emb)
+                # if mask and layer == self.n_layers - 1:
+                #     all_emb = torch_sparse.spmm(g_droped.indices(),  M.coalesce().values()* g_droped.values(), g_droped.shape[0], g_droped.shape[1],
+                #                             all_emb)
+                embs.append(all_emb)
 
         embs = torch.stack(embs, dim=1)
         light_out = torch.mean(embs, dim=1)
         users, items = torch.split(light_out, [self.n_users, self.n_items])
-
         return users, items
 
     def regularize(self, users, pos_items, neg_items):
@@ -707,12 +712,12 @@ class INV_LGN(MF):
         if flag:
             self.embed_user.requires_grad_(False)
             self.embed_item.requires_grad_(False)
-            for param in self.new_M.parameters():
+            for param in self.M.parameters():
                 param.requires_grad = True
         else:
             self.embed_user.requires_grad_(True)
             self.embed_item.requires_grad_(True)
-            for param in self.new_M.parameters():
+            for param in self.M.parameters():
                 param.requires_grad = False
 
 
