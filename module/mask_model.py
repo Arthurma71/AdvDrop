@@ -90,11 +90,16 @@ class Mask_Model_Geometric(MessagePassing):
         self.device = torch.device(args.cuda)
 
     def forward(self, x: Tensor, edge_index: Adj) -> Tensor:
+        row, col = edge_index
+        deg = degree(col, x.size(0), dtype=x.dtype)
+        deg_inv_sqrt = deg.pow(-0.5)
+        deg_inv_sqrt[deg_inv_sqrt == float('inf')] = 0
+        norm = deg_inv_sqrt[row] * deg_inv_sqrt[col]
         x_norm = F.normalize(x, p=2., dim=-1)
         # propagate_type: (x: Tensor, x_norm: Tensor)
-        return self.propagate(edge_index, x=x, x_norm = x_norm, size=None)
+        return self.propagate(edge_index, x=x, x_norm = x_norm, norm = norm, size=None)
 
-    def message(self, x_j: Tensor, x_norm_i: Tensor, x_norm_j: Tensor,
+    def message(self, x_j: Tensor, x_norm_i: Tensor, x_norm_j: Tensor, norm,
                 index: Tensor, ptr: OptTensor,
                 size_i: Optional[int]) -> Tensor:
         # apply transformation layers
@@ -107,7 +112,7 @@ class Mask_Model_Geometric(MessagePassing):
         alpha = (alpha - gumble_G) / self.gumble_tau
         # softmax
         alpha = softmax(alpha, index, ptr, size_i)
-        return x_j * alpha.view(-1, 1)
+        return x_j * alpha.view(-1, 1) * norm.view(-1, 1)
 
 
 class GCN(MessagePassing):
