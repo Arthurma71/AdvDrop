@@ -50,7 +50,7 @@ class MF(nn.Module):
 class LGN(MF):
     def __init__(self, args, data):
         super().__init__(args, data)
-        self.Graph = data.getSparseGraph()
+        self.Graph = data.getSparseGraph().cuda(self.device)
         self.n_layers = args.n_layers
 
     def compute(self):
