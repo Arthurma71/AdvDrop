@@ -602,7 +602,7 @@ class SimpleX_batch(LGN):
 class INV_LGN(MF):
     def __init__(self, args, data):
         super().__init__(args, data)
-        if args.is_geometric:
+        if args.is_geometric == 1:
             self.edge_index = data.getEdgeIndex().cuda(self.device)
             self.M = Mask_Model_Geometric(args)
             self.GCN = GCN(args)
@@ -620,13 +620,13 @@ class INV_LGN(MF):
         self.warmup = True
 
     def compute(self, mask=False):
-        # TODO: add masked LGN propogation
+        # add masked LGN propogation
         users_emb = self.embed_user.weight
         items_emb = self.embed_item.weight
         all_emb = torch.cat([users_emb, items_emb])
 
         embs = [all_emb]
-        if self.args.is_geometric:
+        if self.args.is_geometric == 1:
             for layer in range(self.n_layers):
                 all_emb = self.M(all_emb, self.edge_index) if mask else self.GCN(all_emb, self.edge_index)
                 embs.append(all_emb)
