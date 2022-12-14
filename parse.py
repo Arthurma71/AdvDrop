@@ -100,6 +100,8 @@ def parse_args():
                         help='No. samples in inv loss')
     parser.add_argument('--is_geometric', type=bool, default=False,
                         help='using geometric package or not')
+    parser.add_argument('--keep_prob', type=float, default=0.8,
+                        help='keep prob for dropout')
 
 
     

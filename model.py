@@ -721,6 +721,93 @@ class INV_LGN(MF):
                 param.requires_grad = False
 
 
+class INV_LGN_DUAL(MF):
+    def __init__(self, args, data):
+        super().__init__(args, data)
+        self.Graph = data.getSparseGraph()
+        self.n_layers = args.n_layers
+        self.inv_loss = Inv_Loss_Embed(args)
+        self.args = args
+        self.warmup = True
+
+        self.embed_user_dual = nn.Embedding(self.n_users, self.emb_dim)
+        self.embed_item_dual = nn.Embedding(self.n_items, self.emb_dim)
+
+        nn.init.xavier_normal_(self.embed_user_dual.weight)
+        nn.init.xavier_normal_(self.embed_item_dual.weight)
+        self.is_train=True
+    
+    def __dropout(self, graph, keep_prob):
+        size = graph.size()
+        index = graph.indices().t()
+        values = graph.values()
+        random_index = torch.rand(len(values)) + keep_prob
+        random_index = random_index.int().bool()
+        index = index[random_index]
+        values = values[random_index]/keep_prob
+        g = torch.sparse.FloatTensor(index.t(), values, size)
+        return g
+    
+    def compute(self, dual=False):
+        if not dual:
+            users_emb = self.embed_user.weight
+            items_emb = self.embed_item.weight
+        else:
+            users_emb = self.embed_user_dual
+            items_emb = self.embed_item_dual
+        all_emb = torch.cat([users_emb, items_emb])
+
+        embs = [all_emb]
+        if self.is_train:
+            g_droped = self.__dropout(self.Graph, args.keep_prob)
+        else:
+            g_droped = self.Graph
+
+        for layer in range(self.n_layers):
+            all_emb = torch.sparse.mm(g_droped, all_emb)
+            embs.append(all_emb)
+        embs = torch.stack(embs, dim=1)
+
+        light_out = torch.mean(embs, dim=1)
+        users, items = torch.split(light_out, [self.n_users, self.n_items])
+
+        return users, items
+    
+
+    def forward(self, users, pos_items, neg_items):
+
+        mf_loss=0
+        reg_loss=0
+        user_embeds=[]
+        item_embeds=[]
+
+
+        for dual_ind in [True,False]:
+            all_users, all_items = self.compute(dual_ind)
+
+            user_embeds.append(all_users)
+            item_embeds.append(all_items)
+
+            users_emb = all_users[users]
+            pos_emb = all_items[pos_items]
+            neg_emb = all_items[neg_items]
+
+            pos_scores = torch.sum(torch.mul(users_emb, pos_emb), dim=1)  # users, pos_items, neg_items have the same shape
+            neg_scores = torch.sum(torch.mul(users_emb, neg_emb), dim=1)
+
+            regularizer = self.regularize(users, pos_items, neg_items) / self.batch_size
+
+            maxi = torch.log(torch.sigmoid(pos_scores - neg_scores) + 1e-10)
+
+            mf_loss = mf_loss + torch.negative(torch.mean(maxi))
+            reg_loss = reg_loss+ self.decay * regularizer
+        
+        inv_loss, losses=self.inv_loss(user_embeds, item_embeds)
+
+        return mf_loss, reg_loss, inv_loss
+
+
+
 '''
 class BPRMF(LGN):
     def __init__(self, args, data):
