@@ -102,6 +102,8 @@ def parse_args():
                         help='using geometric package or not')
     parser.add_argument('--keep_prob', type=float, default=0.8,
                         help='keep prob for dropout')
+    parser.add_argument('--embed_tau', type=float, default=0.1,
+                        help='tau for embed-level infonce')
 
 
     

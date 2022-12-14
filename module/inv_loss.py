@@ -33,21 +33,22 @@ class Inv_Loss_Embed(nn.Module):
     def __init__(self, args):
         super().__init__()
         self.args = args
-        self.align_W=nn.Linear(args.embed_size,args,embed_size)
+        self.tau = args.embed_tau
+        self.align_W=nn.Linear(args.embed_size,args.embed_size)
     
     def forward(self, all_users, all_items):
         num_items = len(all_items)
         num_users = len(all_users)
         item_index = torch.randint(0, num_items, (self.args.num_samples,))
-        selected_items=all_items[item_index]
+        selected_items=[all_items[0][item_index],all_items[1][item_index]]
         user_index = torch.randint(0, num_users, (self.args.num_samples,))
-        selected_users=all_users[user_index]
+        selected_users=[all_users[0][user_index],all_items[1][item_index]]
 
         inv_loss=0
         losses=[]
-        #ratings = torch.matmul(selected_users, torch.transpose(self.align_W(selected_users), 0, 1))
         for embed in [selected_users, selected_items]:
-            ratings = torch.matmul(embed, torch.transpose(embed, 0, 1))
+            #ratings = torch.matmul(embed[0], torch.transpose(self.align_W(embed[1]), 0, 1))
+            ratings = torch.matmul(embed[0], torch.transpose(embed[1], 0, 1))
             ratings_diag = torch.diag(ratings)
             numerator = torch.exp(ratings_diag / self.tau)
             denominator = torch.sum(torch.exp(ratings / self.tau), dim = 1)

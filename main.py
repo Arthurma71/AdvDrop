@@ -18,7 +18,7 @@ import os
 from utils import *
 from data import Data
 from parse import parse_args
-from model import CausE, IPS, LGN, MACR, INFONCE_batch, INFONCE, SAMREG, BC_LOSS, BC_LOSS_batch, SimpleX, SimpleX_batch
+from model import CausE, IPS, LGN, MACR, INFONCE_batch, INFONCE, SAMREG, BC_LOSS, BC_LOSS_batch, SimpleX, SimpleX_batch, INV_LGN_DUAL
 from torch.utils.data import Dataset, DataLoader
 
 
@@ -350,6 +350,9 @@ if __name__ == '__main__':
         model = SimpleX(args,data)
     if args.modeltype == "SimpleX_batch":
         model = SimpleX_batch(args,data)
+    if args.modeltype == 'INV_LGN_DUAL':
+        model = INV_LGN_DUAL(args,data)
+
     
 #    b=args.sample_beta
 
@@ -384,6 +387,10 @@ if __name__ == '__main__':
         running_cf_loss = 0
         # BC_LOSS
         running_loss1, running_loss2 = 0, 0
+
+        # INV_LGN
+
+        running_inv_loss = 0
 
         t1=time.time()
 
@@ -455,7 +462,10 @@ if __name__ == '__main__':
             elif args.modeltype == "SimpleX_batch":
                 mf_loss, reg_loss = model(users, pos_items)
                 loss = mf_loss + reg_loss
-
+            
+            elif args.modeltype == "INV_LGN_DUAL":
+                mf_loss, reg_loss, inv_loss = model(users,pos_items,neg_items)
+                loss = mf_loss + reg_loss + inv_loss
 
             else:
                 mf_loss, reg_loss = model(users, pos_items, neg_items)
@@ -477,6 +487,9 @@ if __name__ == '__main__':
             if args.modeltype == 'BC_LOSS' or args.modeltype == 'BC_LOSS_batch':
                 running_loss1 += loss1.detach().item()
                 running_loss2 += loss2.detach().item()
+            
+            if args.modeltype == "INV_LGN_DUAL":
+                running_inv_loss += inv_loss.detach().item()
 
             num_batches += 1
 
@@ -492,6 +505,12 @@ if __name__ == '__main__':
             perf_str = 'Epoch %d [%.1fs]: train==[%.5f=%.5f + %.5f + %.5f]' % (
                 epoch, t2 - t1, running_loss / num_batches,
                 running_loss1 / num_batches, running_loss2 / num_batches, running_reg_loss / num_batches)
+            
+        elif args.modeltype=="INV_LGN_DUAL":
+            perf_str = 'Epoch %d [%.1fs]: train==[%.5f=%.5f + %.5f + %.5f]' % (
+                epoch, t2 - t1, running_loss / num_batches,
+                running_mf_loss / num_batches, running_reg_loss / num_batches, running_inv_loss / num_batches)
+
 
         else:
             perf_str = 'Epoch %d [%.1fs]: train==[%.5f=%.5f + %.5f]' % (

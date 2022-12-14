@@ -748,18 +748,18 @@ class INV_LGN_DUAL(MF):
         g = torch.sparse.FloatTensor(index.t(), values, size)
         return g
     
-    def compute(self, dual=False):
+    def compute(self, dual=False, dropout = False):
         if not dual:
             users_emb = self.embed_user.weight
             items_emb = self.embed_item.weight
         else:
-            users_emb = self.embed_user_dual
-            items_emb = self.embed_item_dual
+            users_emb = self.embed_user_dual.weight
+            items_emb = self.embed_item_dual.weight
         all_emb = torch.cat([users_emb, items_emb])
 
         embs = [all_emb]
-        if self.is_train:
-            g_droped = self.__dropout(self.Graph, args.keep_prob)
+        if dropout:
+            g_droped = self.__dropout(self.Graph, self.args.keep_prob).cuda(self.device)
         else:
             g_droped = self.Graph
 
@@ -773,6 +773,18 @@ class INV_LGN_DUAL(MF):
 
         return users, items
     
+    def regularize(self, users, pos_items, neg_items, dual=False):
+        if not dual:
+            userEmb0 = self.embed_user(users)
+            posEmb0 = self.embed_item(pos_items)
+            negEmb0 = self.embed_item(neg_items)
+        else:
+            userEmb0 = self.embed_user_dual(users)
+            posEmb0 = self.embed_item_dual(pos_items)
+            negEmb0 = self.embed_item_dual(neg_items)
+        regularizer = 0.5 * torch.norm(userEmb0) ** 2 + 0.5 * torch.norm(posEmb0) ** 2 + 0.5 * torch.norm(negEmb0) ** 2
+        return regularizer
+    
 
     def forward(self, users, pos_items, neg_items):
 
@@ -783,7 +795,7 @@ class INV_LGN_DUAL(MF):
 
 
         for dual_ind in [True,False]:
-            all_users, all_items = self.compute(dual_ind)
+            all_users, all_items = self.compute(dual=dual_ind,dropout=True)
 
             user_embeds.append(all_users)
             item_embeds.append(all_items)
@@ -795,7 +807,7 @@ class INV_LGN_DUAL(MF):
             pos_scores = torch.sum(torch.mul(users_emb, pos_emb), dim=1)  # users, pos_items, neg_items have the same shape
             neg_scores = torch.sum(torch.mul(users_emb, neg_emb), dim=1)
 
-            regularizer = self.regularize(users, pos_items, neg_items) / self.batch_size
+            regularizer = self.regularize(users, pos_items, neg_items, dual_ind) / self.batch_size
 
             maxi = torch.log(torch.sigmoid(pos_scores - neg_scores) + 1e-10)
 
@@ -805,6 +817,18 @@ class INV_LGN_DUAL(MF):
         inv_loss, losses=self.inv_loss(user_embeds, item_embeds)
 
         return mf_loss, reg_loss, inv_loss
+    
+    def predict(self, users, items=None):
+        if items is None:
+            items = list(range(self.n_items))
+
+        all_users, all_items = self.compute()
+
+        users = all_users[torch.tensor(users).cuda(self.device)]
+        items = torch.transpose(all_items[torch.tensor(items).cuda(self.device)], 0, 1)
+        rate_batch = torch.matmul(users, items)
+
+        return rate_batch.cpu().detach().numpy()
 
 
 
