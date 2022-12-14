@@ -86,7 +86,6 @@ class Mask_Model_Geometric(MessagePassing):
         self.embed_h = args.att_dim
         self.Q = Linear(self.embed_size, self.embed_h)
         self.K = Linear(self.embed_size, self.embed_h)
-        self.add_self_loops = add_self_loops
         self.gumble_tau = args.gumble_tau
         self.device = torch.device(args.cuda)
 
