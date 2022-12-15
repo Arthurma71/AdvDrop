@@ -615,7 +615,7 @@ class INV_LGN(MF):
         # (U+I) x (U+I) matrix
         # self.adj_mat = data.getSparseGraph()
         self.n_layers = args.n_layers
-        self.inv_loss = Inv_Loss(args)
+        self.inv_loss = Inv_Loss_Rank(args)
         self.args = args
         self.warmup = True
 
@@ -761,7 +761,7 @@ class INV_LGN_DUAL(MF):
         if dropout:
             g_droped = self.__dropout(self.Graph, self.args.keep_prob).cuda(self.device)
         else:
-            g_droped = self.Graph
+            g_droped = self.Graph.cuda(self.device)
 
         for layer in range(self.n_layers):
             all_emb = torch.sparse.mm(g_droped, all_emb)
@@ -815,6 +815,7 @@ class INV_LGN_DUAL(MF):
             reg_loss = reg_loss+ self.decay * regularizer
         
         inv_loss, losses=self.inv_loss(user_embeds, item_embeds)
+        #inv_loss = -self.inv_loss(item_embeds[0], item_embeds[1], user_embeds[0], user_embeds[1], users)
 
         return mf_loss, reg_loss, inv_loss
     

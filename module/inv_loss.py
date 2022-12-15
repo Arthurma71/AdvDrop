@@ -1,8 +1,9 @@
 import torch.nn as nn
+import torch.nn.functional as F
 import torch
 
 
-class Inv_Loss(nn.Module):
+class Inv_Loss_Rank(nn.Module):
     def __init__(self, args):
         super().__init__()
         self.args = args
@@ -37,21 +38,24 @@ class Inv_Loss_Embed(nn.Module):
         self.align_W=nn.Linear(args.embed_size,args.embed_size)
     
     def forward(self, all_users, all_items):
-        num_items = len(all_items)
-        num_users = len(all_users)
+        num_items = len(all_items[0])
+        num_users = len(all_users[0])
         item_index = torch.randint(0, num_items, (self.args.num_samples,))
         selected_items=[all_items[0][item_index],all_items[1][item_index]]
         user_index = torch.randint(0, num_users, (self.args.num_samples,))
-        selected_users=[all_users[0][user_index],all_items[1][item_index]]
+        selected_users=[all_users[0][user_index],all_users[1][user_index]]
 
         inv_loss=0
         losses=[]
         for embed in [selected_users, selected_items]:
-            #ratings = torch.matmul(embed[0], torch.transpose(self.align_W(embed[1]), 0, 1))
+
+            # embed0 = F.normalize(embed[0], dim = -1)
+            # embed1 = F.normalize(embed[1], dim = -1)
+            # ratings = torch.matmul(embed0, torch.transpose(self.align_W(embed1), 0, 1))
             ratings = torch.matmul(embed[0], torch.transpose(embed[1], 0, 1))
             ratings_diag = torch.diag(ratings)
-            numerator = torch.exp(ratings_diag / self.tau)
-            denominator = torch.sum(torch.exp(ratings / self.tau), dim = 1)
+            numerator = torch.exp(torch.sigmoid(ratings_diag) / self.tau)
+            denominator = torch.sum(torch.exp(torch.sigmoid(ratings) / self.tau), dim = 1)
             ssm_loss = torch.mean(torch.negative(torch.log(numerator/denominator)))
             inv_loss = inv_loss + ssm_loss
             losses.append(ssm_loss)
