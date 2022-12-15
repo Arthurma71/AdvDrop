@@ -108,7 +108,7 @@ class Data:
 
         self.train_item_list = collections.defaultdict(list)
         self.Graph = None
-        self.trainUser, self.trainItem, self.UserItemNet = [], [], None
+        self.trainUser, self.trainItem, self.UserItemNet, self.Un_Graph = [], [], None, None
         self.n_interactions = 0
         self.test_ood_item_list = []
         self.test_id_item_list = []
@@ -329,6 +329,9 @@ class Data:
                 self.Graph = self.Graph.coalesce()
 
         return self.Graph
+
+
+            
   
 class TrainDataset(torch.utils.data.Dataset):
 
