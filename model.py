@@ -7,7 +7,9 @@ import torch.nn.functional as F
 import torch_sparse
 from module.mask_model import *
 from module.inv_loss import *
-
+from torch_geometric.nn.conv import LGConv
+from torch_sparse import SparseTensor, matmul
+from torch.nn import ModuleList
 
 class MF(nn.Module):
     def __init__(self, args, data):
@@ -595,25 +597,35 @@ class SimpleX_batch(LGN):
 
         return mf_loss, reg_loss
 
-
-
-
+        
 
 class INV_LGN(MF):
     def __init__(self, args, data):
         super().__init__(args, data)
         if args.is_geometric == 1:
             self.edge_index = data.getEdgeIndex().cuda(self.device)
+
+    #         self.adj_mat = data.getSparseGraph().coalesce()
+    #         self.index = self.adj_mat.indices()
+    #         self.edge_index = SparseTensor(row=self.index[0], col=self.index[1], value=self.adj_mat.values(), sparse_sizes=(
+    # self.n_users + self.n_items, self.n_users + self.n_items)).cuda(self.device)
+
             self.M = Mask_Model_Geometric(args)
-            self.GCN = GCN(args)
+            self.lgn = LGConv()
+    #         alpha = 1. / (args.n_layers + 1)
+    #         if isinstance(alpha, Tensor):
+    #             assert alpha.size(0) == args.n_layers + 1
+    #         else:
+    #             alpha = torch.tensor([alpha] * (args.n_layers + 1))
+    #         self.register_buffer('alpha', alpha)
+
         else:
+            # (U+I) x (U+I) matrix
             self.Graph = data.getSparseGraph().cuda(self.device)
             # U-I matrix
             self.adj_mat = data.getSparseGraph(ui_only=True).cuda(self.device)
             self.M = Mask_Model(args, self.adj_mat, self.Graph)
 
-        # (U+I) x (U+I) matrix
-        # self.adj_mat = data.getSparseGraph()
         self.n_layers = args.n_layers
         self.inv_loss = Inv_Loss(args)
         self.args = args
@@ -628,8 +640,11 @@ class INV_LGN(MF):
         embs = [all_emb]
         if self.args.is_geometric == 1:
             for layer in range(self.n_layers):
-                all_emb = self.M(all_emb, self.edge_index) if mask else self.GCN(all_emb, self.edge_index)
+                all_emb = self.M(all_emb, self.edge_index) if mask else self.lgn(all_emb, self.edge_index)
                 embs.append(all_emb)
+            # out = self.gcn(all_emb, self.edge_index)
+            # users, items = torch.split(out, [self.n_users, self.n_items])
+
         else:
             g_droped = self.Graph
             if mask:
@@ -657,6 +672,7 @@ class INV_LGN(MF):
         light_out = torch.mean(embs, dim=1)
         users, items = torch.split(light_out, [self.n_users, self.n_items])
         return users, items
+
 
     def regularize(self, users, pos_items, neg_items):
         userEmb0 = self.embed_user(users)
@@ -719,6 +735,18 @@ class INV_LGN(MF):
             self.embed_item.requires_grad_(True)
             for param in self.M.parameters():
                 param.requires_grad = False
+
+    def predict(self, users, items=None):
+        if items is None:
+            items = list(range(self.n_items))
+
+        all_users, all_items = self.compute()
+
+        users = all_users[torch.tensor(users).cuda(self.device)]
+        items = torch.transpose(all_items[torch.tensor(items).cuda(self.device)], 0, 1)
+        rate_batch = torch.matmul(users, items)
+
+        return rate_batch.cpu().detach().numpy()
 
 
 class INV_LGN_DUAL(MF):

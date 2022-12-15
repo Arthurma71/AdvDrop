@@ -4,9 +4,7 @@ from sys import get_coroutine_origin_tracking_depth
 from sys import exit
 
 random.seed(101)
-import matplotlib.pyplot as plt
 import math
-import matplotlib.patches as mpatches
 # from scipy.linalg import svd
 import itertools
 import torch
@@ -18,9 +16,10 @@ import collections
 import os
 from data import Data
 from parse import parse_args
-from model import INV_LGN
+from model import INV_LGN, LGN
 from torch.utils.data import Dataset, DataLoader
 from utils import *
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
 
 
 def train_step():
@@ -108,6 +107,8 @@ if __name__ == '__main__':
 
     if args.modeltype == 'INV_LGN':
         model = INV_LGN(args, data)
+    if args.modeltype == 'LGN':
+        model = LGN(args, data)
     #    b=args.sample_beta
     model.cuda(device)
 
@@ -130,9 +131,8 @@ if __name__ == '__main__':
         if flag:
             break
         running_loss, running_mf_loss, running_reg_loss, running_inv_loss, num_batches = 0, 0, 0, 0, 0
-
         if epoch >= args.pre_epochs:
-            #model.warmup = False
+            model.warmup = False
             
             running_loss_adp, avg_mf_loss_m, avg_inv_loss_adp, num_batches_adp = 0, 0, 0, 0
 
@@ -158,11 +158,6 @@ if __name__ == '__main__':
                 mf_loss_m, inv_loss = model.forward_adaptive(users, pos_items, neg_items)
 
                 loss = -inv_loss + args.adaptive_tau * mf_loss_m
-
-                #print(inv_loss.requires_grad)
-                #print(mf_loss_m.requires_grad)
-
-
 
                 optimizer.zero_grad()
                 loss.backward()
@@ -199,7 +194,6 @@ if __name__ == '__main__':
             model.train()
 
             mf_loss, reg_loss, inv_loss = model(users, pos_items, neg_items)
-
             #print(mf_loss.requires_grad)
             #print(reg_loss.requires_grad)
 #

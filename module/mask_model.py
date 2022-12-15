@@ -5,8 +5,7 @@ from typing import Optional, Tuple, Union
 import torch
 import torch.nn.functional as F
 from torch import Tensor
-from torch_sparse import SparseTensor, set_diag
-
+from torch_sparse import SparseTensor, matmul, set_diag
 from torch_geometric.nn.conv import MessagePassing
 from torch_geometric.nn.dense.linear import Linear
 from torch_geometric.typing import NoneType  # noqa
@@ -14,6 +13,7 @@ from torch_geometric.typing import Adj, OptPairTensor, OptTensor, Size
 from torch_geometric.utils import add_self_loops, remove_self_loops, softmax
 from torch_geometric.nn.inits import glorot, zeros
 from torch_geometric.utils import add_self_loops, degree
+from torch_geometric.nn.conv.gcn_conv import gcn_norm
 
 
 class Mask_Model(nn.Module):
@@ -52,14 +52,15 @@ class Mask_Model(nn.Module):
         item_num = item_embed.shape[0]
         user_pad = torch.sparse.FloatTensor(torch.Size([user_num, user_num])).to(self.device)
         item_pad = torch.sparse.FloatTensor(torch.Size([item_num, item_num])).to(self.device)
-
+        # user as the query 
         M_ui = self.get_M_attention(self.u_i_matrix, user_embed, item_embed)
-        M_ui = torch.cat([user_pad, M_ui], dim=1)
+        M_ui = torch.cat([user_pad, M_ui], dim=1).coalesce()
+        # item as the query 
         M_iu = self.get_M_attention(torch.transpose(self.u_i_matrix, 0, 1), item_embed, user_embed)
-        M_iu = torch.cat([M_iu, item_pad], dim=1)
+        M_iu = torch.cat([M_iu, item_pad], dim=1).coalesce()
 
-        mask = torch.cat([M_ui, M_iu], dim=0)
-        mask = torch.sparse_coo_tensor(mask._indices(), torch.cat[M_ui.values(), M_iu.values()], mask.size())
+        mask = torch.cat([M_ui, M_iu], dim=0).coalesce()
+        mask = torch.sparse_coo_tensor(mask._indices(), torch.cat([M_ui.values(), M_iu.values()]), mask.size())
         return mask
 
     def mask_simple(self, user_embed, item_embed):
@@ -117,16 +118,23 @@ class Mask_Model_Geometric(MessagePassing):
 
 class GCN(MessagePassing):
     def __init__(self, args):
-        super().__init__(aggr='add')
+        super().__init__()
+        self.n_layers = args.n_layers
 
-    def forward(self, x: Tensor, edge_index: Adj) -> Tensor:
-        row, col = edge_index
-        deg = degree(col, x.size(0), dtype=x.dtype)
-        deg_inv_sqrt = deg.pow(-0.5)
-        deg_inv_sqrt[deg_inv_sqrt == float('inf')] = 0
-        norm = deg_inv_sqrt[row] * deg_inv_sqrt[col]
-        return self.propagate(edge_index, x=x, norm=norm, size=None)
+    def forward(self, emd: Tensor, edge_index: Adj) -> Tensor:
+        all_emd = [emd]
+        for i in range(self.n_layers):
+            emd = self.propagate(edge_index, x=emd)
+            all_emd.append(emd)
+
+        all_emd = torch.stack(all_emd, dim=1)
+        emb_final = torch.mean(all_emd, dim=1)
+        
+        return emb_final
 
     def message(self, x_j: Tensor, norm) -> Tensor:
         # Constructs messages from node :math:`j` to node :math:`i`
-        return norm.view(-1, 1) * x_j
+        return x_j
+    def message_and_aggregate(self, adj_t: SparseTensor, x: Tensor) -> Tensor:
+        # computes \tilde{A} @ x
+        return matmul(adj_t, x)
