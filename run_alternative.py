@@ -131,52 +131,54 @@ if __name__ == '__main__':
         if flag:
             break
         running_loss, running_mf_loss, running_reg_loss, running_inv_loss, num_batches = 0, 0, 0, 0, 0
-        if epoch >= args.pre_epochs:
+        if epoch + 1  % args.interval == 0:
             model.warmup = False
             
             avg_inv_loss_adp, num_batches_adp = 0, 0
 
-            t1 = time.time()
-            pbar = tqdm(enumerate(data.train_loader), total=len(data.train_loader))
-            #print("embed_user grad before", model.embed_user.weight.requires_grad)
-            model.freeze_args(True)
-            #print("embed_user grad after", model.embed_user.weight.requires_grad)
+            for epoch_adv in range(args.adv_epochs):
 
-            # adaptive mask step
-            for batch_i, batch in pbar:
-                batch = [x.cuda(device) for x in batch]
-                users = batch[0]
-                pos_items = batch[1]
-                users_pop = batch[2]
-                pos_items_pop = batch[3]
-                pos_weights = batch[4]
-                neg_items = batch[5]
-                neg_items_pop = batch[6]
+                t1 = time.time()
+                pbar = tqdm(enumerate(data.train_loader), total=len(data.train_loader))
+                #print("embed_user grad before", model.embed_user.weight.requires_grad)
+                model.freeze_args(True)
+                #print("embed_user grad after", model.embed_user.weight.requires_grad)
 
-                model.train()
-
-                mf_loss, reg_loss, inv_loss= model(users, pos_items, neg_items)
-
-                loss = -inv_loss
-
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
+                # adaptive mask step
 
                 
-                avg_inv_loss_adp += inv_loss.detach().item()
-                num_batches_adp += 1
+                for batch_i, batch in pbar:
+                    batch = [x.cuda(device) for x in batch]
+                    users = batch[0]
+                    pos_items = batch[1]
+                    users_pop = batch[2]
+                    pos_items_pop = batch[3]
+                    pos_weights = batch[4]
+                    neg_items = batch[5]
+                    neg_items_pop = batch[6]
 
-            t2 = time.time()
-            perf_str = 'Epoch %d [%.1fs]: adjust avg inv == %.5f' % (
-                epoch, t2 - t1,  avg_inv_loss_adp / num_batches_adp)
+                    model.train()
+
+                    mf_loss, reg_loss, inv_loss= model(users, pos_items, neg_items)
+
+                    loss = -inv_loss
+
+                    optimizer.zero_grad()
+                    loss.backward()
+                    optimizer.step()
+
+                    
+                    avg_inv_loss_adp += inv_loss.detach().item()
+                    num_batches_adp += 1
+
+                t2 = time.time()
+                perf_str = 'Adv Epoch %d [%.1fs]: adjust avg inv == %.5f' % (
+                    epoch_adv, t2 - t1,  avg_inv_loss_adp / num_batches_adp)
             
             with open(base_path + 'stats_{}.txt'.format(args.saveID), 'a') as f:
                 f.write(perf_str + "\n")
         t1 = time.time()
-
         pbar = tqdm(enumerate(data.train_loader), total=len(data.train_loader))
-
         model.freeze_args(False)
         # training step
         for batch_i, batch in pbar:
