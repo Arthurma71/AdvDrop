@@ -753,9 +753,12 @@ class INV_LGN_DUAL(MF):
     def __init__(self, args, data):
         super().__init__(args, data)
         self.Graph = data.getSparseGraph()
+        self.args = args
+        if self.args.dropout_type = 1:
+            self.edge_index = data.getEdgeIndex().cuda(self.device)
         self.n_layers = args.n_layers
         self.inv_loss = Inv_Loss_Embed(args)
-        self.args = args
+        self.M = Mask_Model_Attention(args)
         self.warmup = True
 
         self.embed_user_dual = nn.Embedding(self.n_users, self.emb_dim)
@@ -765,11 +768,14 @@ class INV_LGN_DUAL(MF):
         nn.init.xavier_normal_(self.embed_item_dual.weight)
         self.is_train=True
     
-    def __dropout(self, graph, keep_prob):
+    def __dropout(self, graph, keep_prob, mask):
         size = graph.size()
         index = graph.indices().t()
         values = graph.values()
-        random_index = torch.rand(len(values)) + keep_prob
+        if self.args.dropout_type = 0:
+            random_index = torch.rand(len(values)).cuda(self.device) + keep_prob
+        else:
+            random_index = torch.rand(len(values)).cuda(self.device) + mask
         random_index = random_index.int().bool()
         index = index[random_index]
         values = values[random_index]/keep_prob
@@ -787,7 +793,11 @@ class INV_LGN_DUAL(MF):
 
         embs = [all_emb]
         if dropout:
-            g_droped = self.__dropout(self.Graph, self.args.keep_prob).cuda(self.device)
+            if self.args.dropout_type = 0:
+                mask = None
+            else:
+                mask = self.M(all_emb, self.edge_index) if dual else 1 - self.M(all_emb, self.edge_index)
+            g_droped = self.__dropout(self.Graph, self.args.keep_prob, mask).cuda(self.device)
         else:
             g_droped = self.Graph.cuda(self.device)
 

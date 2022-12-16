@@ -104,8 +104,8 @@ def parse_args():
                         help='keep prob for dropout')
     parser.add_argument('--embed_tau', type=float, default=0.1,
                         help='tau for embed-level infonce')
-
-
+    parser.add_argument('--dropout_type', type=int, default=1,
+                        help='dropout type for embed-level infonce 0 for random 1 for attention')
     
     return parser.parse_args()
 
