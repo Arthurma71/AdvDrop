@@ -873,13 +873,15 @@ class INV_LGN_DUAL(MF):
         if adv:
             self.embed_user.requires_grad_(False)
             self.embed_item.requires_grad_(False)
-            self.embed_user.requires_grad_(False)
-            self.embed_item.requires_grad_(False)
+            self.embed_user_dual.requires_grad_(False)
+            self.embed_item_dual.requires_grad_(False)
             for param in self.M.parameters():
                 param.requires_grad = True
         else:
             self.embed_user.requires_grad_(True)
             self.embed_item.requires_grad_(True)
+            self.embed_user_dual.requires_grad_(True)
+            self.embed_item_dual.requires_grad_(True)
             for param in self.M.parameters():
                 param.requires_grad = False
 
