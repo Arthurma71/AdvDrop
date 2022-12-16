@@ -131,7 +131,9 @@ if __name__ == '__main__':
         if flag:
             break
         running_loss, running_mf_loss, running_reg_loss, running_inv_loss, num_batches = 0, 0, 0, 0, 0
-        if epoch + 1  % args.interval == 0:
+        if (epoch + 1)  % args.interval == 0:
+
+            print("start adversarial training...")
             model.warmup = False
             
             avg_inv_loss_adp, num_batches_adp = 0, 0
@@ -175,8 +177,8 @@ if __name__ == '__main__':
                 perf_str = 'Adv Epoch %d [%.1fs]: adjust avg inv == %.5f' % (
                     epoch_adv, t2 - t1,  avg_inv_loss_adp / num_batches_adp)
             
-            with open(base_path + 'stats_{}.txt'.format(args.saveID), 'a') as f:
-                f.write(perf_str + "\n")
+                with open(base_path + 'stats_{}.txt'.format(args.saveID), 'a') as f:
+                    f.write(perf_str + "\n")
         t1 = time.time()
         pbar = tqdm(enumerate(data.train_loader), total=len(data.train_loader))
         model.freeze_args(False)

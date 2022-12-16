@@ -96,7 +96,7 @@ def parse_args():
                         help='attention dim')
     parser.add_argument('--pre_epochs', type=int, default=1,
                         help='warmup epochs')
-    parser.add_argument('--interval', type=int, default=5,
+    parser.add_argument('--interval', type=int, default=7,
                         help='normal training epoch before entering adversarial training in each cycle')
     parser.add_argument('--adv_epochs', type=int, default=5,
                         help='adversarial epochs')

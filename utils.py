@@ -99,7 +99,7 @@ def restore_checkpoint(model, checkpoint_dir, device, force=False, pretrain=Fals
         print("=> Checkpoint not successfully restored")
         raise
 
-    return model, inp_epoch
+    return model, inp_epoch+1
 
 
 def restore_best_checkpoint(epoch, model, checkpoint_dir, device):
