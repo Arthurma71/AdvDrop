@@ -754,7 +754,7 @@ class INV_LGN_DUAL(MF):
         super().__init__(args, data)
         self.Graph = data.getSparseGraph()
         self.args = args
-        if self.args.dropout_type = 1:
+        if self.args.dropout_type == 1:
             self.edge_index = data.getEdgeIndex().cuda(self.device)
         self.n_layers = args.n_layers
         self.inv_loss = Inv_Loss_Embed(args)
@@ -772,7 +772,7 @@ class INV_LGN_DUAL(MF):
         size = graph.size()
         index = graph.indices().t()
         values = graph.values()
-        if self.args.dropout_type = 0:
+        if self.args.dropout_type == 0:
             random_index = torch.rand(len(values)).cuda(self.device) + keep_prob
         else:
             random_index = torch.rand(len(values)).cuda(self.device) + mask
@@ -793,7 +793,7 @@ class INV_LGN_DUAL(MF):
 
         embs = [all_emb]
         if dropout:
-            if self.args.dropout_type = 0:
+            if self.args.dropout_type == 0:
                 mask = None
             else:
                 mask = self.M(all_emb, self.edge_index) if dual else 1 - self.M(all_emb, self.edge_index)
@@ -852,7 +852,7 @@ class INV_LGN_DUAL(MF):
             mf_loss = mf_loss + torch.negative(torch.mean(maxi))
             reg_loss = reg_loss+ self.decay * regularizer
         
-        inv_loss, losses=self.inv_loss(user_embeds, item_embeds)
+        inv_loss, losses=self.args.inv_tau*self.inv_loss(user_embeds, item_embeds)
         #inv_loss = -self.inv_loss(item_embeds[0], item_embeds[1], user_embeds[0], user_embeds[1], users)
 
         return mf_loss, reg_loss, inv_loss
@@ -868,7 +868,20 @@ class INV_LGN_DUAL(MF):
         rate_batch = torch.matmul(users, items)
 
         return rate_batch.cpu().detach().numpy()
-
+    
+    def freeze_args(self, adv=True):
+        if adv:
+            self.embed_user.requires_grad_(False)
+            self.embed_item.requires_grad_(False)
+            self.embed_user.requires_grad_(False)
+            self.embed_item.requires_grad_(False)
+            for param in self.M.parameters():
+                param.requires_grad = True
+        else:
+            self.embed_user.requires_grad_(True)
+            self.embed_item.requires_grad_(True)
+            for param in self.M.parameters():
+                param.requires_grad = False
 
 
 '''
