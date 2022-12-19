@@ -768,21 +768,25 @@ class INV_LGN_DUAL(MF):
         nn.init.xavier_normal_(self.embed_item_dual.weight)
         self.is_train=True
     
-    def __dropout(self, graph, keep_prob, mask):
+    def __dropout(self, graph, keep_prob, mask, is_arm=False):
         size = graph.size()
         index = graph.indices().t()
         values = graph.values()
-        if self.args.dropout_type == 0:
-            random_index = torch.rand(len(values)).cuda(self.device) + keep_prob
+        if not is_arm:
+            if self.args.dropout_type == 0:
+                random_index = torch.rand(len(values)).cuda(self.device) + keep_prob
+            else:
+                random_index = torch.rand(len(values)).cuda(self.device) + mask
+            random_index = random_index.int().bool()
         else:
-            random_index = torch.rand(len(values)).cuda(self.device) + mask
-        random_index = random_index.int().bool()
+            random_index = mask
         index = index[random_index]
         values = values[random_index]/keep_prob
         g = torch.sparse.FloatTensor(index.t(), values, size)
         return g
     
-    def compute(self, dual=False, dropout = False):
+    def compute(self, dual=False, dropout = False, mask = None):
+        is_arm = True if mask != None else False
         if not dual:
             users_emb = self.embed_user.weight
             items_emb = self.embed_item.weight
@@ -793,11 +797,12 @@ class INV_LGN_DUAL(MF):
 
         embs = [all_emb]
         if dropout:
-            if self.args.dropout_type == 0:
-                mask = None
-            else:
-                mask = self.M(all_emb, self.edge_index) if dual else 1 - self.M(all_emb, self.edge_index)
-            g_droped = self.__dropout(self.Graph, self.args.keep_prob, mask).cuda(self.device)
+            if mask == None:
+                if self.args.dropout_type == 0:
+                    mask = None
+                else:
+                    mask = self.M(all_emb, self.edge_index) if dual else 1 - self.M(all_emb, self.edge_index)
+            g_droped = self.__dropout(self.Graph, self.args.keep_prob, mask, is_arm).cuda(self.device)
         else:
             g_droped = self.Graph.cuda(self.device)
 
@@ -833,7 +838,7 @@ class INV_LGN_DUAL(MF):
 
 
         for dual_ind in [True,False]:
-            all_users, all_items = self.compute(dual=dual_ind,dropout=True)
+            all_users, all_items =  self.compute(dual = dual_ind, dropout=True)
 
             user_embeds.append(all_users)
             item_embeds.append(all_items)
@@ -856,6 +861,51 @@ class INV_LGN_DUAL(MF):
         #inv_loss = -self.inv_loss(item_embeds[0], item_embeds[1], user_embeds[0], user_embeds[1], users)
 
         return mf_loss, reg_loss, inv_loss
+
+    
+
+    def get_mask(self, dual_ind):
+        if not dual_ind:
+            users_emb = self.embed_user.weight
+            items_emb = self.embed_item.weight
+        else:
+            users_emb = self.embed_user_dual.weight
+            items_emb = self.embed_item_dual.weight
+        all_emb = torch.cat([users_emb, items_emb])
+
+        embs = [all_emb]
+
+        mask = self.M(all_emb, self.edge_index) if dual_ind else 1 - self.M(all_emb, self.edge_index) 
+
+        return mask
+
+    def forward_ARM(self, users, pos_items, neg_items):
+
+        u=torch.rand(len(self.Graph.values())).cuda(self.device)
+
+        mf_loss=0
+        reg_loss=0
+        user_embeds=[[],[]]
+        item_embeds=[[],[]]
+
+        for dual_ind in [True,False]:
+            mask = self.get_mask(dual_ind)
+            drop1 = u > 1 - mask
+            drop2 = u < mask
+
+            for idx, drop in enumerate([drop1, drop2]):
+                all_users, all_items =  self.compute(dual = dual_ind, dropout=True, mask=drop)
+                user_embeds[idx].append(all_users)
+                item_embeds[idx].append(all_items)
+
+        inv_loss1 = self.args.inv_tau*self.inv_loss(user_embeds[0], item_embeds[0])
+        inv_loss2 = self.args.inv_tau*self.inv_loss(user_embeds[1], item_embeds[1])
+
+        my_grad = (inv_loss1 - inv_loss2) * (u-0.5)
+
+        return my_grad
+
+
     
     def predict(self, users, items=None):
         if items is None:
