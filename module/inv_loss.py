@@ -51,12 +51,13 @@ class Inv_Loss_Embed(nn.Module):
 
             # embed0 = F.normalize(embed[0], dim = -1)
             # embed1 = F.normalize(embed[1], dim = -1)
-            # ratings = torch.matmul(embed0, torch.transpose(self.align_W(embed1), 0, 1))
+            #ratings = torch.matmul(embed[0], torch.transpose(self.align_W(embed[1]), 0, 1))
             ratings = torch.matmul(embed[0], torch.transpose(embed[1], 0, 1))
             ratings_diag = torch.diag(ratings)
             numerator = torch.exp(torch.sigmoid(ratings_diag) / self.tau)
             denominator = torch.sum(torch.exp(torch.sigmoid(ratings) / self.tau), dim = 1)
             ssm_loss = torch.mean(torch.negative(torch.log(numerator/denominator)))
+            # print("ssm loss: ", torch.negative(torch.log(numerator/denominator)))
             inv_loss = inv_loss + ssm_loss
             losses.append(ssm_loss)
         

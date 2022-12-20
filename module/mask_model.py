@@ -198,9 +198,10 @@ class Mask_Model_Attention(MessagePassing):
         # alpha = (alpha - gumble_G) / self.gumble_tau
         
         # softmax
-        alpha = softmax(alpha, index, ptr, size_i)
-        alpha = alpha*norm*self.args.keep_prob
-        return torch.clamp(alpha, min=0, max=1)  
+        # alpha = softmax(alpha, index, ptr, size_i)
+        # alpha = alpha*norm*self.args.keep_prob
+        # return torch.clamp(alpha, min=0, max=1) 
+        return torch.sigmoid(alpha) 
 
 
 class GCN(MessagePassing):

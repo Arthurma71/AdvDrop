@@ -862,7 +862,6 @@ class INV_LGN_DUAL(MF):
 
         return mf_loss, reg_loss, inv_loss
 
-    
 
     def get_mask(self, dual_ind):
         if not dual_ind:
@@ -892,20 +891,26 @@ class INV_LGN_DUAL(MF):
             mask = self.get_mask(dual_ind)
             drop1 = u > 1 - mask
             drop2 = u < mask
+            # print("drop1 shape: ", drop1.shape)
+            # print("count", torch.sum(drop1))
+
+            # print("drop2 shape: ", drop2.shape)
+            # print("count", torch.sum(drop2))
 
             for idx, drop in enumerate([drop1, drop2]):
                 all_users, all_items =  self.compute(dual = dual_ind, dropout=True, mask=drop)
                 user_embeds[idx].append(all_users)
                 item_embeds[idx].append(all_items)
 
-        inv_loss1 = self.args.inv_tau*self.inv_loss(user_embeds[0], item_embeds[0])
-        inv_loss2 = self.args.inv_tau*self.inv_loss(user_embeds[1], item_embeds[1])
-
-        my_grad = (inv_loss1 - inv_loss2) * (u-0.5)
+        inv_loss1, _ = self.args.inv_tau*self.inv_loss(user_embeds[0], item_embeds[0])
+        # print("inv loss 1", inv_loss1)
+        # print(user_embeds[0].shape, item_embeds[0].shape)
+        inv_loss2, _ = self.args.inv_tau*self.inv_loss(user_embeds[1], item_embeds[1])
+        # print("inv loss 2", inv_loss2)
+        my_grad = 5*(-inv_loss1 + inv_loss2) * (u-0.5)
 
         return my_grad
-
-
+        
     
     def predict(self, users, items=None):
         if items is None:

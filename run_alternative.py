@@ -161,12 +161,18 @@ if __name__ == '__main__':
 
                     model.train()
 
-                    mf_loss, reg_loss, inv_loss= model(users, pos_items, neg_items)
+                    my_grad = model.forward_ARM(users, pos_items, neg_items)
+                    mask = model.get_mask(True)
+                    _, _, inv_loss = model(users, pos_items, neg_items)
 
-                    loss = -inv_loss
 
+                    # loss = -inv_loss
                     optimizer.zero_grad()
-                    loss.backward()
+                    mask.backward(my_grad)
+                    # print("grad: ",my_grad)
+                    # print("inv loss: ",inv_loss)
+                    # print(model.M.Q.weight.grad)
+                    # loss.backward()
                     optimizer.step()
 
                     
@@ -194,11 +200,9 @@ if __name__ == '__main__':
             neg_items_pop = batch[6]
 
             model.train()
-
-            mf_loss, reg_loss, inv_loss = model(users, pos_items, neg_items)
             #print(mf_loss.requires_grad)
             #print(reg_loss.requires_grad)
-#
+            mf_loss, reg_loss, inv_loss = model(users, pos_items, neg_items)
             loss = mf_loss + reg_loss +  inv_loss
 
             # print(torch.cuda.memory_allocated(model.device))
