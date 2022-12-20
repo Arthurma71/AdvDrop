@@ -110,6 +110,8 @@ def parse_args():
                         help='tau for embed-level infonce')
     parser.add_argument('--dropout_type', type=int, default=1,
                         help='dropout type for embed-level infonce 0 for random 1 for attention')
+    parser.add_argument('--grad_coeff', type=float, default=5,
+                        help='coefficient for ARM gradient')
     
     return parser.parse_args()
 

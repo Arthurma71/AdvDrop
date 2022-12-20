@@ -907,7 +907,7 @@ class INV_LGN_DUAL(MF):
         # print(user_embeds[0].shape, item_embeds[0].shape)
         inv_loss2, _ = self.args.inv_tau*self.inv_loss(user_embeds[1], item_embeds[1])
         # print("inv loss 2", inv_loss2)
-        my_grad = 5*(-inv_loss1 + inv_loss2) * (u-0.5)
+        my_grad = self.args.grad_coeff * (-inv_loss1 + inv_loss2) * (u-0.5)
 
         return my_grad
         
