@@ -96,10 +96,12 @@ def parse_args():
                         help='attention dim')
     parser.add_argument('--pre_epochs', type=int, default=1,
                         help='warmup epochs')
-    parser.add_argument('--interval', type=int, default=2,
+    parser.add_argument('--interval', type=int, default=7,
                         help='normal training epoch before entering adversarial training in each cycle')
     parser.add_argument('--adv_epochs', type=int, default=5,
                         help='adversarial epochs')
+    parser.add_argument('--adv_patience', type=int, default=3,
+                        help='adversarial patience')
     parser.add_argument('--num_samples', type=int, default=100,
                         help='No. samples in inv loss')
     parser.add_argument('--is_geometric', type=int, default=0,

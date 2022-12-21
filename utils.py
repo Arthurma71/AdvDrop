@@ -38,6 +38,21 @@ def save_checkpoint(model, epoch, checkpoint_dir, buffer, max_to_keep=10):
 
     return buffer
 
+def save_checkpoint_adv(model, epoch,checkpoint_dir):
+    state = {
+        'epoch': epoch,
+        'state_dict': model.state_dict(),
+    }
+    filename = os.path.join(checkpoint_dir, 'best_adv.checkpoint.pth.tar')
+    torch.save(state, filename)
+    return
+
+def restore_checkpoint_adv(model, checkpoint_dir, device):
+    filename = os.path.join(checkpoint_dir, 'best_adv.checkpoint.pth.tar')
+    checkpoint=torch.load(filename, map_location = str(device))
+    model.load_state_dict(checkpoint['state_dict'])
+    return model
+
 
 def restore_checkpoint(model, checkpoint_dir, device, force=False, pretrain=False):
     """

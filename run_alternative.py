@@ -138,7 +138,12 @@ if __name__ == '__main__':
             
             avg_inv_loss_adp, num_batches_adp = 0, 0
 
-            for epoch_adv in range(args.adv_epochs):
+            best_avg_inv = np.inf
+
+            cur_adv_patience=0
+
+            while cur_adv_patience < args.adv_patience:
+            #for epoch_adv in range(args.adv_epochs):
 
                 t1 = time.time()
                 pbar = tqdm(enumerate(data.train_loader), total=len(data.train_loader))
@@ -183,8 +188,20 @@ if __name__ == '__main__':
                 perf_str = 'Adv Epoch %d [%.1fs]: adjust avg inv == %.5f' % (
                     epoch_adv, t2 - t1,  avg_inv_loss_adp / num_batches_adp)
             
+                cur_adv_patience+=1
+                
+                if (avg_inv_loss_adp / num_batches_adp) < best_avg_inv:
+                    cur_adv_patience=0
+                    best_avg_inv = avg_inv_loss_adp / num_batches_adp
+                    save_checkpoint_adv(model, epoch, base_path)
+            
                 with open(base_path + 'stats_{}.txt'.format(args.saveID), 'a') as f:
                     f.write(perf_str + "\n")
+
+        
+        model = restore_checkpoint_adv(model, base_path, device)
+
+
         t1 = time.time()
         pbar = tqdm(enumerate(data.train_loader), total=len(data.train_loader))
         model.freeze_args(False)
