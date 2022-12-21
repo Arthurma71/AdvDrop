@@ -142,6 +142,7 @@ if __name__ == '__main__':
 
             cur_adv_patience=0
 
+            epoch_adv = 0 
             while cur_adv_patience < args.adv_patience:
             #for epoch_adv in range(args.adv_epochs):
 
@@ -187,7 +188,8 @@ if __name__ == '__main__':
                 t2 = time.time()
                 perf_str = 'Adv Epoch %d [%.1fs]: adjust avg inv == %.5f' % (
                     epoch_adv, t2 - t1,  avg_inv_loss_adp / num_batches_adp)
-            
+                    
+                epoch_adv += 1 
                 cur_adv_patience+=1
                 
                 if (avg_inv_loss_adp / num_batches_adp) > best_avg_inv:
@@ -198,7 +200,6 @@ if __name__ == '__main__':
                 with open(base_path + 'stats_{}.txt'.format(args.saveID), 'a') as f:
                     f.write(perf_str + "\n")
 
-        
             model = restore_checkpoint_adv(model, base_path, device)
 
 
