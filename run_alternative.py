@@ -138,7 +138,7 @@ if __name__ == '__main__':
             
             avg_inv_loss_adp, num_batches_adp = 0, 0
 
-            best_avg_inv = np.inf
+            best_avg_inv = -np.inf
 
             cur_adv_patience=0
 
@@ -190,7 +190,7 @@ if __name__ == '__main__':
             
                 cur_adv_patience+=1
                 
-                if (avg_inv_loss_adp / num_batches_adp) < best_avg_inv:
+                if (avg_inv_loss_adp / num_batches_adp) > best_avg_inv:
                     cur_adv_patience=0
                     best_avg_inv = avg_inv_loss_adp / num_batches_adp
                     save_checkpoint_adv(model, epoch, base_path)
@@ -199,7 +199,7 @@ if __name__ == '__main__':
                     f.write(perf_str + "\n")
 
         
-        model = restore_checkpoint_adv(model, base_path, device)
+            model = restore_checkpoint_adv(model, base_path, device)
 
 
         t1 = time.time()
