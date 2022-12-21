@@ -750,7 +750,7 @@ class INV_LGN(MF):
 
 
 class INV_LGN_DUAL(MF):
-    def __init__(self, args, data):
+    def __init__(self, args, data, writer):
         super().__init__(args, data)
         self.Graph = data.getSparseGraph()
         self.args = args
@@ -767,7 +767,12 @@ class INV_LGN_DUAL(MF):
         nn.init.xavier_normal_(self.embed_user_dual.weight)
         nn.init.xavier_normal_(self.embed_item_dual.weight)
         self.is_train=True
+        self.writer = writer
+        self.global_step=0
     
+    def step(self):
+        self.global_step+=1
+
     def __dropout(self, graph, keep_prob, mask, is_arm=False):
         size = graph.size()
         index = graph.indices().t()
@@ -889,6 +894,8 @@ class INV_LGN_DUAL(MF):
 
         for dual_ind in [True,False]:
             mask = self.get_mask(dual_ind)
+            if dual_ind:
+                self.writer.add_histogram('Dropout Mask', mask, self.global_step)
             drop1 = u > 1 - mask
             drop2 = u < mask
             # print("drop1 shape: ", drop1.shape)

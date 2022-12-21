@@ -19,6 +19,7 @@ from parse import parse_args
 from model import INV_LGN_DUAL, LGN
 from torch.utils.data import Dataset, DataLoader
 from utils import *
+from torch.utils.tensorboard import SummaryWriter
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
 
 
@@ -40,16 +41,16 @@ if __name__ == '__main__':
     device = torch.device(args.cuda)
     saveID = args.saveID
 
-    if args.n_layers == 2 and args.modeltype != "LGN":
-        base_path = './weights/{}/{}-LGN/{}'.format(args.dataset, args.modeltype, saveID)
-    else:
-        base_path = './weights/{}/{}/{}'.format(args.dataset, args.modeltype, saveID)
-
     saveID += "n_layers=" + str(args.n_layers)
     base_path = './weights/{}/{}/{}'.format(args.dataset, args.modeltype, saveID)
+    run_path = './runs/{}/{}/{}'.format(args.dataset, args.modeltype, saveID)
 
     checkpoint_buffer = []
     ensureDir(base_path)
+    ensureDir(run_path)
+
+    writer = SummaryWriter(log_dir=run_path)
+
 
     p_item = np.array([len(data.train_item_list[u]) if u in data.train_item_list else 0 for u in range(data.n_items)])
     p_user = np.array([len(data.train_user_list[u]) if u in data.train_user_list else 0 for u in range(data.n_users)])
@@ -106,7 +107,7 @@ if __name__ == '__main__':
     eval_names = ["valid", "test_id", "test_ood"]
 
     if args.modeltype == 'INV_LGN_DUAL':
-        model = INV_LGN_DUAL(args, data)
+        model = INV_LGN_DUAL(args, data,writer)
     if args.modeltype == 'LGN':
         model = LGN(args, data)
     #    b=args.sample_beta
@@ -125,6 +126,7 @@ if __name__ == '__main__':
 
     optimizer = torch.optim.Adam([param for param in model.parameters() if param.requires_grad == True], lr=model.lr)
     #optimizer = torch.optim.SparseAdam([param for param in model.parameters() if param.requires_grad == True], lr=model.lr)
+    
 
     for epoch in range(start_epoch, args.epoch):
         # If the early stopping has been reached, restore to the best performance model
@@ -180,6 +182,7 @@ if __name__ == '__main__':
                     # print(model.M.Q.weight.grad)
                     # loss.backward()
                     optimizer.step()
+                    model.step()
 
                     
                     avg_inv_loss_adp += inv_loss.detach().item()
@@ -188,7 +191,7 @@ if __name__ == '__main__':
                 t2 = time.time()
                 perf_str = 'Adv Epoch %d [%.1fs]: adjust avg inv == %.5f' % (
                     epoch_adv, t2 - t1,  avg_inv_loss_adp / num_batches_adp)
-                    
+
                 epoch_adv += 1 
                 cur_adv_patience+=1
                 
