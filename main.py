@@ -18,8 +18,9 @@ import os
 from utils import *
 from data import Data
 from parse import parse_args
-from model import CausE, IPS, LGN, MACR, INFONCE_batch, INFONCE, SAMREG, BC_LOSS, BC_LOSS_batch, SimpleX, SimpleX_batch, INV_LGN_DUAL
+from model import CausE, IPS, LGN, MACR, INFONCE_batch, INFONCE, SAMREG, BC_LOSS, BC_LOSS_batch, SimpleX, SimpleX_batch, INV_LGN_DUAL, CVIB
 from torch.utils.data import Dataset, DataLoader
+from torch.utils.tensorboard import SummaryWriter
 
 
 
@@ -282,7 +283,12 @@ if __name__ == '__main__':
 
     checkpoint_buffer=[]
     freeze_epoch=args.freeze_epoch if (args.modeltype=="BC_LOSS" or args.modeltype=="BC_LOSS_batch") else 0
+    
+    run_path = './runs/{}/{}/{}'.format(args.dataset, args.modeltype, saveID)
     ensureDir(base_path)
+    ensureDir(run_path)
+
+    writer = SummaryWriter(log_dir=run_path)
 
     p_item = np.array([len(data.train_item_list[u]) if u in data.train_item_list else 0 for u in range(data.n_items)])
     p_user = np.array([len(data.train_user_list[u]) if u in data.train_user_list else 0 for u in range(data.n_users)])
@@ -351,7 +357,9 @@ if __name__ == '__main__':
     if args.modeltype == "SimpleX_batch":
         model = SimpleX_batch(args,data)
     if args.modeltype == 'INV_LGN_DUAL':
-        model = INV_LGN_DUAL(args,data)
+        model = INV_LGN_DUAL(args, data, writer)
+    if args.modeltype == 'CVIB':
+        model = CVIB(args, data)
 
     
 #    b=args.sample_beta
@@ -369,20 +377,20 @@ if __name__ == '__main__':
                 
 
     flag = False
-    
+    if args.modeltype == 'INV_LGN_DUAL':
+        model.freeze_args(False)
+
     optimizer = torch.optim.Adam([ param for param in model.parameters() if param.requires_grad == True], lr=model.lr)
 
     #item_pop_idx = torch.tensor(data.item_pop_idx).cuda(device)
-
-    
     for epoch in range(start_epoch, args.epoch):
 
         # If the early stopping has been reached, restore to the best performance model
-        if flag:
-            break
+        # if flag:
+        #     break
 
         # All models
-        running_loss, running_mf_loss, running_reg_loss, num_batches = 0, 0, 0, 0
+        running_loss, running_mf_loss, running_reg_loss, num_batches, running_bce_loss, running_info_loss = 0, 0, 0, 0, 0, 0
         # CausE
         running_cf_loss = 0
         # BC_LOSS
@@ -395,9 +403,11 @@ if __name__ == '__main__':
         t1=time.time()
 
         pbar = tqdm(enumerate(data.train_loader), total = len(data.train_loader))
+        
+        if args.modeltype == 'CVIB':
+            model.shuffle()
 
         for batch_i, batch in pbar:            
-
             batch = [x.cuda(device) for x in batch]
 
             users = batch[0]
@@ -464,8 +474,19 @@ if __name__ == '__main__':
                 loss = mf_loss + reg_loss
             
             elif args.modeltype == "INV_LGN_DUAL":
-                mf_loss, reg_loss, inv_loss = model(users,pos_items,neg_items)
-                loss = mf_loss + reg_loss + inv_loss
+                if args.remove_inv == 0:
+                    mf_loss, reg_loss, inv_loss = model(users,pos_items,neg_items)
+                    loss = mf_loss + reg_loss + inv_loss * args.inv_coeff
+                else:
+                    mf_loss, reg_loss, _ = model(users,pos_items,neg_items)
+                    loss = mf_loss + reg_loss 
+                
+            elif args.modeltype == "CVIB":
+                x_sampled = model.all_samples[model.ul_idxs[batch_i*args.batch_size:(batch_i+1)*args.batch_size]]
+                sampled_user = torch.LongTensor(x_sampled[:,0])
+                sampled_items = torch.LongTensor(x_sampled[:,1])
+                bce_loss, info_loss = model(users,pos_items,neg_items,sampled_user,sampled_items)
+                loss = bce_loss + info_loss
 
             else:
                 mf_loss, reg_loss = model(users, pos_items, neg_items)
@@ -474,11 +495,14 @@ if __name__ == '__main__':
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+            if args.modeltype == "INV_LGN_DUAL":
+                model.step()
 
             running_loss += loss.detach().item()
-            running_reg_loss += reg_loss.detach().item()
+            if args.modeltype != "CVIB":
+                running_reg_loss += reg_loss.detach().item()
 
-            if args.modeltype != 'BC_LOSS' and args.modeltype != 'BC_LOSS_batch':
+            if args.modeltype != 'BC_LOSS' and args.modeltype != 'BC_LOSS_batch' and args.modeltype != "CVIB":
                 running_mf_loss += mf_loss.detach().item()
             
             if args.modeltype == 'CausE':
@@ -487,9 +511,14 @@ if __name__ == '__main__':
             if args.modeltype == 'BC_LOSS' or args.modeltype == 'BC_LOSS_batch':
                 running_loss1 += loss1.detach().item()
                 running_loss2 += loss2.detach().item()
-            
-            if args.modeltype == "INV_LGN_DUAL":
+
+            if args.remove_inv == 0 and args.modeltype == "INV_LGN_DUAL":
                 running_inv_loss += inv_loss.detach().item()
+                # if args.modeltype == "INV_LGN_DUAL":
+                #     running_inv_loss += inv_loss.detach().item()
+            if args.modeltype == "CVIB":
+                running_bce_loss += bce_loss.detach().item()
+                running_info_loss += info_loss.detach().item()
 
             num_batches += 1
 
@@ -507,11 +536,21 @@ if __name__ == '__main__':
                 running_loss1 / num_batches, running_loss2 / num_batches, running_reg_loss / num_batches)
             
         elif args.modeltype=="INV_LGN_DUAL":
-            perf_str = 'Epoch %d [%.1fs]: train==[%.5f=%.5f + %.5f + %.5f]' % (
+            if args.remove_inv == 0:
+                perf_str = 'Epoch %d [%.1fs]: train==[%.5f=%.5f + %.5f + %.5f]' % (
                 epoch, t2 - t1, running_loss / num_batches,
                 running_mf_loss / num_batches, running_reg_loss / num_batches, running_inv_loss / num_batches)
+            else:
+                perf_str = 'Epoch %d [%.1fs]: train==[%.5f=%.5f + %.5f]' % (
+                    epoch, t2 - t1, running_loss / num_batches,
+                    running_mf_loss / num_batches, running_reg_loss / num_batches)
+                # + %.5f
+                #, running_inv_loss / num_batches
 
-
+        elif args.modeltype=="CVIB":
+            perf_str = 'Epoch %d [%.1fs]: train==[%.5f=%.5f + %.5f]' % (
+                epoch, t2 - t1, running_loss / num_batches,
+                running_bce_loss / num_batches, running_info_loss / num_batches)
         else:
             perf_str = 'Epoch %d [%.1fs]: train==[%.5f=%.5f + %.5f]' % (
                 epoch, t2 - t1, running_loss / num_batches,
