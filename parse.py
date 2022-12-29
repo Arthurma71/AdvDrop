@@ -21,7 +21,7 @@ def parse_args():
                         help='Regularization.')
     parser.add_argument('--epoch', type=int, default=1600,
                         help='Number of epoch.')
-    parser.add_argument('--Ks', nargs='?', default= [20],
+    parser.add_argument('--Ks', nargs='?', default= [3],
                         help='Evaluate on Ks optimal items.')
     parser.add_argument('--log_interval', type=int, default=10,
                         help='log\'s interval epoch while training')
@@ -114,6 +114,20 @@ def parse_args():
                         help='dropout type for embed-level infonce 0 for random 1 for attention')
     parser.add_argument('--grad_coeff', type=float, default=5,
                         help='coefficient for ARM gradient')
+    parser.add_argument('--inv_coeff', type=float, default=1,
+                        help='coefficient for inv loss')
+
+    parser.add_argument('--remove_inv', type=float, default=0,
+                        help='0: not remove. 1: remove')
+
+
+    # CVIB 
+    parser.add_argument('--cvib_alpha', type=float, default=0.1,
+                        help='alpha for CVIB')
+    parser.add_argument('--cvib_gamma', type=float, default=0.01,
+                        help='gamma for CVIB')
+
+
     
     return parser.parse_args()
 
