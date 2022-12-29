@@ -67,7 +67,6 @@ def helper_load_train(filename):
     return user_dict_list, item_dict, item_dict_list, trainUser, trainItem
 
 class Data:
-    
     def __init__(self, args):
         self.path = args.data_path + args.dataset + '/'
         self.small_path=args.data_path + args.dataset+".mid"+"/"
@@ -86,6 +85,8 @@ class Data:
         self.item_pop_max = 0
         self.infonce = args.infonce
         self.num_workers = args.num_workers
+        self.dataset=args.dataset
+        
 
         # Number of total users and items
         self.n_users, self.n_items, self.n_observations = 0, 0, 0
@@ -101,6 +102,7 @@ class Data:
         self.valid_user_list = collections.defaultdict(list)
         self.test_ood_user_list = collections.defaultdict(list)
         self.test_id_user_list = collections.defaultdict(list)
+        self.train_neg_user_list = None
 
         # Used to track early stopping point
         self.best_valid_recall = -np.inf
@@ -123,6 +125,11 @@ class Data:
         self.valid_user_list, valid_item = helper_load(self.valid_file)
         self.test_ood_user_list, self.test_ood_item_list = helper_load(self.test_ood_file)
         self.test_id_user_list, self.test_id_item_list = helper_load(self.test_id_file)
+
+        if 'coat' in self.dataset:
+            self.train_neg_user_list, _  = helper_load(self.path + 'train_neg.txt')
+            print(self.train_neg_user_list)
+
         self.pop_dict_list = []
 
         temp_lst = [train_item, valid_item, self.test_ood_item_list, self.test_id_item_list]
@@ -219,12 +226,14 @@ class Data:
         if self.modeltype == 'CausE':
             self.train_data = TrainDataset_cause(self.modeltype, self.users, self.train_user_list, self.n_observations, \
                                                 self.n_interactions, self.pop_item, self.n_items, self.infonce, self.neg_sample, self.items, self.sample_items)
+        elif self.modeltype == 'CVIB_SEQ':
+            self.train_data = TrainDataset(self.modeltype, self.users, self.train_user_list, self.user_pop_idx, self.item_pop_idx, \
+                                        self.neg_sample, self.n_observations, self.n_items, self.sample_items, self.weights, self.infonce, self.items, self.train_neg_user_list,seq=True)
         else:
             self.train_data = TrainDataset(self.modeltype, self.users, self.train_user_list, self.user_pop_idx, self.item_pop_idx, \
-                                        self.neg_sample, self.n_observations, self.n_items, self.sample_items, self.weights, self.infonce, self.items)
+                                        self.neg_sample, self.n_observations, self.n_items, self.sample_items, self.weights, self.infonce, self.items, self.train_neg_user_list)
 
         self.train_loader = DataLoader(self.train_data, batch_size=self.batch_size, shuffle=True, num_workers=self.num_workers, drop_last=True)
-        
     def get_weight(self):
 
         if 's' in self.IPStype:
@@ -331,12 +340,12 @@ class Data:
         return self.Graph
 
 
-            
+
   
 class TrainDataset(torch.utils.data.Dataset):
 
     def __init__(self, modeltype, users, train_user_list, user_pop_idx, item_pop_idx, neg_sample, \
-                n_observations, n_items, sample_items, weights, infonce, items):
+                n_observations, n_items, sample_items, weights, infonce, items, train_neg_user_list=None,seq=False):
         self.modeltype = modeltype
         self.users = users
         self.train_user_list = train_user_list
@@ -349,8 +358,31 @@ class TrainDataset(torch.utils.data.Dataset):
         self.weights = weights
         self.infonce = infonce
         self.items = items
+        self.train_neg_user_list= train_neg_user_list
+        self.seq=seq
+        if self.seq:
+            self.user_seq=[]
+            self.item_seq=[]
+            self.lab_seq=[]
+
+            for u in self.users:
+                if u in self.train_user_list:
+                    for i in self.train_user_list[u]:
+                        self.user_seq.append(u)
+                        self.item_seq.append(i)
+                        self.lab_seq.append(1)
+                if u in self.train_neg_user_list:
+                    for i in self.train_neg_user_list[u]:
+                        self.user_seq.append(u)
+                        self.item_seq.append(i)
+                        self.lab_seq.append(0)
+            self.n_observations=len(self.user_seq)
+
 
     def __getitem__(self, index):
+
+        if self.seq:
+            return self.user_seq[index],self.item_seq[index],self.lab_seq[index]
 
         index = index % len(self.users)
         user = self.users[index]
@@ -363,6 +395,8 @@ class TrainDataset(torch.utils.data.Dataset):
         pos_item_pop = self.item_pop_idx[pos_item]
         pos_weight = self.weights[pos_item]
 
+
+
         if self.infonce == 1 and self.neg_sample == -1:
 
             return user, pos_item, user_pop, pos_item_pop, pos_weight
@@ -373,12 +407,21 @@ class TrainDataset(torch.utils.data.Dataset):
             neg_items_pop = self.item_pop_idx[neg_items]
 
             return user, pos_item, user_pop, pos_item_pop, pos_weight, torch.tensor(neg_items).long(), neg_items_pop
-
         else:
-            while True:
-                neg_item = self.items[rd.randint(0, self.n_items -1)]
-                if neg_item not in self.train_user_list[user]:
-                    break
+
+            if self.train_neg_user_list != None:
+                if user in self.train_neg_user_list[user]:
+                    neg_item = rd.choice(self.train_neg_user_list[user])
+                else:
+                    while True:
+                        neg_item = self.items[rd.randint(0, self.n_items -1)]
+                        if neg_item not in self.train_user_list[user]:
+                            break
+            else:
+                while True:
+                    neg_item = self.items[rd.randint(0, self.n_items -1)]
+                    if neg_item not in self.train_user_list[user]:
+                        break
         
             neg_item_pop = self.item_pop_idx[neg_item]
             return user, pos_item, user_pop, pos_item_pop, pos_weight, neg_item, neg_item_pop

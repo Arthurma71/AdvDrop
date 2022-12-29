@@ -1038,6 +1038,88 @@ class CVIB(MF):
 
         return rate_batch.cpu().detach().numpy()
 
+
+
+class CVIB_SEQ(MF):
+    def __init__(self, args, data):
+        super().__init__(args, data)
+        self.Graph = data.getSparseGraph().cuda(self.device)
+        self.n_layers = args.n_layers
+        self.all_samples = self.generate_total_sample(self.n_users, self.n_items)
+        self.sigmoid = nn.Sigmoid()
+        self.bce = nn.BCELoss()
+        self.ul_idxs = np.arange(self.all_samples.shape[0])
+        self.alpha = args.cvib_alpha
+        self.gamma = args.cvib_gamma
+        self.args = args
+
+    def shuffle(self):
+        np.random.shuffle(self.ul_idxs)
+
+
+    def compute(self):
+        users_emb = self.embed_user.weight
+        items_emb = self.embed_item.weight
+        all_emb = torch.cat([users_emb, items_emb])
+
+        embs = [all_emb]
+        g_droped = self.Graph
+
+        for layer in range(self.n_layers):
+            all_emb = torch.sparse.mm(g_droped, all_emb)
+            embs.append(all_emb)
+        embs = torch.stack(embs, dim=1)
+
+        light_out = torch.mean(embs, dim=1)
+        users, items = torch.split(light_out, [self.n_users, self.n_items])
+
+        return users, items
+    
+
+
+    def forward(self, users, items, labels, sampled_user, sampled_items):
+        # input is a user, a positive, a negative.
+        all_users, all_items = self.compute()
+        users_emb = all_users[users]
+        items_emb = all_items[items]
+
+        pred = torch.sum(torch.mul(users_emb, items_emb), dim=1)
+        pred = self.sigmoid(pred)
+        # need label 
+        bce_loss = self.bce(pred, labels)
+
+        sampled_user_emb = all_users[sampled_user]
+        sampled_item_emb = all_items[sampled_items]
+        pred_ul = torch.sum(torch.mul(sampled_user_emb, sampled_item_emb), dim=1)
+        pred_ul = self.sigmoid(pred_ul)
+
+        logp_hat = pred.log()
+
+        pred_avg = pred.mean()
+        pred_ul_avg = pred_ul.mean()
+        
+        info_loss = self.alpha * (- pred_avg * pred_ul_avg.log() - (1-pred_avg) * (1-pred_ul_avg).log()) + self.gamma* torch.mean(pred * logp_hat)
+
+        return bce_loss, info_loss
+
+    def generate_total_sample(self, num_users, num_items):
+        sample = []
+        for i in range(num_users):
+            sample.extend([[i,j] for j in range(num_items)])
+        return np.array(sample)
+    
+    def predict(self, users, items=None):
+        if items is None:
+            items = list(range(self.n_items))
+
+        all_users, all_items = self.compute()
+
+        users = all_users[torch.tensor(users).cuda(self.device)]
+        items = torch.transpose(all_items[torch.tensor(items).cuda(self.device)], 0, 1)
+        rate_batch = torch.matmul(users, items)
+
+        return rate_batch.cpu().detach().numpy()
+
     # def predict(self, x):
     #     user_idx = torch.LongTensor(x[:,0])
     #     item_idx = torch.LongTensor(x[:,1])

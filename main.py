@@ -18,7 +18,7 @@ import os
 from utils import *
 from data import Data
 from parse import parse_args
-from model import CausE, IPS, LGN, MACR, INFONCE_batch, INFONCE, SAMREG, BC_LOSS, BC_LOSS_batch, SimpleX, SimpleX_batch, INV_LGN_DUAL, CVIB
+from model import CausE, IPS, LGN, MACR, INFONCE_batch, INFONCE, SAMREG, BC_LOSS, BC_LOSS_batch, SimpleX, SimpleX_batch, INV_LGN_DUAL, CVIB, CVIB_SEQ
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
@@ -360,6 +360,8 @@ if __name__ == '__main__':
         model = INV_LGN_DUAL(args, data, writer)
     if args.modeltype == 'CVIB':
         model = CVIB(args, data)
+    if args.modeltype == 'CVIB_SEQ':
+        model = CVIB_SEQ(args, data)
 
     
 #    b=args.sample_beta
@@ -410,16 +412,22 @@ if __name__ == '__main__':
         for batch_i, batch in pbar:            
             batch = [x.cuda(device) for x in batch]
 
-            users = batch[0]
-            pos_items = batch[1]
+            if args.modeltype != 'CVIB_SEQ':
 
-            if args.modeltype != 'CausE':
-                users_pop = batch[2]
-                pos_items_pop = batch[3]
-                pos_weights = batch[4]
-                if args.infonce == 0 or args.neg_sample != -1:
-                    neg_items = batch[5]
-                    neg_items_pop = batch[6]
+                users = batch[0]
+                pos_items = batch[1]
+
+                if args.modeltype != 'CausE':
+                    users_pop = batch[2]
+                    pos_items_pop = batch[3]
+                    pos_weights = batch[4]
+                    if args.infonce == 0 or args.neg_sample != -1:
+                        neg_items = batch[5]
+                        neg_items_pop = batch[6]
+            else:
+                users = batch[0]
+                items = batch[1]
+                labels = batch[2].float()
 
             model.train()
          
@@ -487,6 +495,13 @@ if __name__ == '__main__':
                 sampled_items = torch.LongTensor(x_sampled[:,1])
                 bce_loss, info_loss = model(users,pos_items,neg_items,sampled_user,sampled_items)
                 loss = bce_loss + info_loss
+            elif args.modeltype == "CVIB_SEQ":
+                x_sampled = model.all_samples[model.ul_idxs[batch_i*args.batch_size:(batch_i+1)*args.batch_size]]
+                sampled_user = torch.LongTensor(x_sampled[:,0])
+                sampled_items = torch.LongTensor(x_sampled[:,1])
+                bce_loss, info_loss = model(users,items,labels,sampled_user,sampled_items)
+                loss = bce_loss + info_loss
+
 
             else:
                 mf_loss, reg_loss = model(users, pos_items, neg_items)
@@ -499,10 +514,10 @@ if __name__ == '__main__':
                 model.step()
 
             running_loss += loss.detach().item()
-            if args.modeltype != "CVIB":
+            if args.modeltype != "CVIB" and args.modeltype !=  "CVIB_SEQ":
                 running_reg_loss += reg_loss.detach().item()
 
-            if args.modeltype != 'BC_LOSS' and args.modeltype != 'BC_LOSS_batch' and args.modeltype != "CVIB":
+            if args.modeltype != 'BC_LOSS' and args.modeltype != 'BC_LOSS_batch' and args.modeltype != "CVIB" and args.modeltype != "CVIB_SEQ":
                 running_mf_loss += mf_loss.detach().item()
             
             if args.modeltype == 'CausE':
@@ -516,7 +531,7 @@ if __name__ == '__main__':
                 running_inv_loss += inv_loss.detach().item()
                 # if args.modeltype == "INV_LGN_DUAL":
                 #     running_inv_loss += inv_loss.detach().item()
-            if args.modeltype == "CVIB":
+            if args.modeltype == "CVIB" or args.modeltype == "CVIB_SEQ":
                 running_bce_loss += bce_loss.detach().item()
                 running_info_loss += info_loss.detach().item()
 
@@ -547,7 +562,7 @@ if __name__ == '__main__':
                 # + %.5f
                 #, running_inv_loss / num_batches
 
-        elif args.modeltype=="CVIB":
+        elif args.modeltype=="CVIB" or args.modeltype =="CVIB_SEQ":
             perf_str = 'Epoch %d [%.1fs]: train==[%.5f=%.5f + %.5f]' % (
                 epoch, t2 - t1, running_loss / num_batches,
                 running_bce_loss / num_batches, running_info_loss / num_batches)

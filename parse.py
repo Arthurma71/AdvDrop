@@ -49,7 +49,7 @@ def parse_args():
                         help='whether to use infonce loss or not')
     parser.add_argument('--num_workers', type=int, default=8,
                         help='number of workers in data loader')
-    parser.add_argument('--neg_sample', type=int, default=-1,
+    parser.add_argument('--neg_sample', type=int, default=1,
                         help='negative sample ratio.')    
 
     # MACR
@@ -116,9 +116,9 @@ def parse_args():
                         help='coefficient for ARM gradient')
     parser.add_argument('--inv_coeff', type=float, default=1,
                         help='coefficient for inv loss')
-
     parser.add_argument('--remove_inv', type=float, default=0,
                         help='0: not remove. 1: remove')
+    parser.add_argument('--adv_lr',type=float,default=1e-2, help='lr for adv')
 
 
     # CVIB 
@@ -128,6 +128,7 @@ def parse_args():
                         help='gamma for CVIB')
 
 
+    
     
     return parser.parse_args()
 

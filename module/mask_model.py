@@ -7,6 +7,7 @@ import torch.nn.functional as F
 from torch import Tensor
 from torch_sparse import SparseTensor, matmul, set_diag
 from torch_geometric.nn.conv import MessagePassing
+from torch_scatter import scatter
 from torch_geometric.nn.dense.linear import Linear
 from torch_geometric.typing import NoneType  # noqa
 from torch_geometric.typing import Adj, OptPairTensor, OptTensor, Size
@@ -114,6 +115,7 @@ class Mask_Model_Geometric(MessagePassing):
         alpha = (alpha - gumble_G) / self.gumble_tau
         # softmax
         alpha = softmax(alpha, index, ptr, size_i)
+
         return x_j * alpha.view(-1, 1) * norm.view(-1, 1)
 
 class Mask_Model_Attention(MessagePassing):
@@ -123,6 +125,7 @@ class Mask_Model_Attention(MessagePassing):
         self.embed_h = args.att_dim
         self.Q = Linear(self.embed_size, self.embed_h)
         self.K = Linear(self.embed_size, self.embed_h)
+        #self.W = Linear(2*self.embed_size, 1)
         self.gumble_tau = args.gumble_tau
         self.device = torch.device(args.cuda)
         self.args = args
@@ -191,16 +194,21 @@ class Mask_Model_Attention(MessagePassing):
         # apply transformation layers
         Query = self.Q(x_norm_i)
         Keys = self.K(x_norm_j)
+
+        # alpha = torch.squeeze(self.W(torch.cat([x_norm_i,x_norm_j],dim=1)))
         # dot product of each query-key pair
         alpha = (Keys * Query).sum(dim=-1)
         # # apply gumble
         # gumble_G = torch.log(-torch.log(torch.rand(alpha.shape[0]).to(self.device)))
         # alpha = (alpha - gumble_G) / self.gumble_tau
+        alpha = (alpha - scatter(alpha,index, dim=0, reduce='mean')[index])
         
+
+        #alpha = (alpha - torch.mean(alpha))/torch.sqrt(torch.var(alpha))
         # softmax
-        # alpha = softmax(alpha, index, ptr, size_i)
-        # alpha = alpha*norm*self.args.keep_prob
-        # return torch.clamp(alpha, min=0, max=1) 
+        #alpha = softmax(alpha, index, ptr, size_i)
+        #alpha = alpha*norm*self.args.keep_prob
+        #return torch.clamp(alpha, min=0, max=1) 
         return torch.sigmoid(alpha) 
 
 
