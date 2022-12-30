@@ -349,7 +349,7 @@ class Data:
 class TrainDataset(torch.utils.data.Dataset):
 
     def __init__(self, modeltype, users, train_user_list, user_pop_idx, item_pop_idx, neg_sample, \
-                n_observations, n_items, sample_items, weights, infonce, items, train_neg_user_list=None,seq=False):
+                n_observations, n_items, sample_items, weights, infonce, items, train_neg_user_list=None,seq=True):
         self.modeltype = modeltype
         self.users = users
         self.train_user_list = train_user_list

@@ -21,7 +21,6 @@ from parse import parse_args
 from model import CausE, IPS, LGN, MACR, INFONCE_batch, INFONCE, SAMREG, BC_LOSS, BC_LOSS_batch, SimpleX, SimpleX_batch, INV_LGN_DUAL, CVIB, CVIB_SEQ, DR
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.tensorboard import SummaryWriter
-from run_cvib import ndcg_func, generate_total_sample, rating_mat_to_sample
 from data_new import load_data
 
 
