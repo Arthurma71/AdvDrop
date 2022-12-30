@@ -18,9 +18,11 @@ import os
 from utils import *
 from data import Data
 from parse import parse_args
-from model import CausE, IPS, LGN, MACR, INFONCE_batch, INFONCE, SAMREG, BC_LOSS, BC_LOSS_batch, SimpleX, SimpleX_batch, INV_LGN_DUAL, CVIB, CVIB_SEQ
+from model import CausE, IPS, LGN, MACR, INFONCE_batch, INFONCE, SAMREG, BC_LOSS, BC_LOSS_batch, SimpleX, SimpleX_batch, INV_LGN_DUAL, CVIB, CVIB_SEQ, DR
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.tensorboard import SummaryWriter
+from run_cvib import ndcg_func, generate_total_sample, rating_mat_to_sample
+from data_new import load_data
 
 
 
@@ -259,8 +261,25 @@ def visulization(items,users,data,p_item,p_user,name):
 if __name__ == '__main__':
 
     start = time.time()
-
     args = parse_args()
+    if args.dataset == "coat":
+        train_mat, test_mat = load_data("coat")        
+        x_train, y_train = rating_mat_to_sample(train_mat)
+        x_test, y_test = rating_mat_to_sample(test_mat)
+        num_user = train_mat.shape[0]
+        num_item = train_mat.shape[1]
+
+    elif args.dataset == "yahoo":
+        x_train, y_train, x_test, y_test = load_data("yahoo")
+        x_train, y_train = shuffle(x_train, y_train)
+        num_user = x_train[:,0].max() + 1
+        num_item = x_train[:,1].max() + 1
+
+    print("# user: {}, # item: {}".format(num_user, num_item))
+    # binarize
+    y_train = binarize(y_train)
+    y_test = binarize(y_test)
+
     data = Data(args)
     data.load_data()
     device="cuda:"+str(args.cuda)
@@ -362,6 +381,8 @@ if __name__ == '__main__':
         model = CVIB(args, data)
     if args.modeltype == 'CVIB_SEQ':
         model = CVIB_SEQ(args, data)
+    if args.modeltype == 'DR':
+        model = DR(args, data)
 
     
 #    b=args.sample_beta
@@ -381,6 +402,13 @@ if __name__ == '__main__':
     flag = False
     if args.modeltype == 'INV_LGN_DUAL':
         model.freeze_args(False)
+    if args.modeltype == 'DR':
+        ips_idxs = np.arange(len(y_test))
+        np.random.shuffle(ips_idxs)
+        y_ips = y_test[ips_idxs[:int(0.05 * len(ips_idxs))]]
+        one_over_zl = model._compute_IPS(model.data.train_data.user_seq, model.data.train_data.item_seq, model.data.train_data.lab_seq, y_ips)
+        prior_y = y_ips.mean()
+
 
     optimizer = torch.optim.Adam([ param for param in model.parameters() if param.requires_grad == True], lr=model.lr)
 
@@ -388,11 +416,11 @@ if __name__ == '__main__':
     for epoch in range(start_epoch, args.epoch):
 
         # If the early stopping has been reached, restore to the best performance model
-        # if flag:
-        #     break
+        if flag:
+            break
 
         # All models
-        running_loss, running_mf_loss, running_reg_loss, num_batches, running_bce_loss, running_info_loss = 0, 0, 0, 0, 0, 0
+        running_loss, running_mf_loss, running_reg_loss, num_batches, running_bce_loss, running_info_loss, running_ips_loss, running_direct_loss = 0, 0, 0, 0, 0, 0, 0, 0
         # CausE
         running_cf_loss = 0
         # BC_LOSS
@@ -406,13 +434,13 @@ if __name__ == '__main__':
 
         pbar = tqdm(enumerate(data.train_loader), total = len(data.train_loader))
         
-        if args.modeltype == 'CVIB':
+        if args.modeltype == 'CVIB' or args.modeltype == 'DR':
             model.shuffle()
 
         for batch_i, batch in pbar:            
             batch = [x.cuda(device) for x in batch]
 
-            if args.modeltype != 'CVIB_SEQ':
+            if args.modeltype != 'CVIB_SEQ' and args.modeltype != 'DR':
 
                 users = batch[0]
                 pos_items = batch[1]
@@ -501,7 +529,14 @@ if __name__ == '__main__':
                 sampled_items = torch.LongTensor(x_sampled[:,1])
                 bce_loss, info_loss = model(users,items,labels,sampled_user,sampled_items)
                 loss = bce_loss + info_loss
-
+            elif args.modeltype == "DR":
+                x_sampled = model.all_samples[model.ul_idxs[batch_i*args.batch_size:(batch_i+1)*args.batch_size]]
+                sampled_user = torch.LongTensor(x_sampled[:,0])
+                sampled_items = torch.LongTensor(x_sampled[:,1])
+                inv_prop = one_over_zl[batch_i*args.batch_size:(batch_i+1)*args.batch_size]
+                imputation_y = torch.Tensor([prior_y]*args.batch_size)
+                ips_loss, direct_loss = model(users, items, labels, sampled_user, sampled_items,inv_prop.cuda(device), imputation_y.cuda(device))
+                loss = ips_loss + direct_loss
 
             else:
                 mf_loss, reg_loss = model(users, pos_items, neg_items)
@@ -514,10 +549,10 @@ if __name__ == '__main__':
                 model.step()
 
             running_loss += loss.detach().item()
-            if args.modeltype != "CVIB" and args.modeltype !=  "CVIB_SEQ":
+            if args.modeltype != "CVIB" and args.modeltype !=  "CVIB_SEQ" and args.modeltype !=  "DR":
                 running_reg_loss += reg_loss.detach().item()
 
-            if args.modeltype != 'BC_LOSS' and args.modeltype != 'BC_LOSS_batch' and args.modeltype != "CVIB" and args.modeltype != "CVIB_SEQ":
+            if args.modeltype != 'BC_LOSS' and args.modeltype != 'BC_LOSS_batch' and args.modeltype != "CVIB" and args.modeltype != "CVIB_SEQ" and args.modeltype != "DR":
                 running_mf_loss += mf_loss.detach().item()
             
             if args.modeltype == 'CausE':
@@ -534,6 +569,10 @@ if __name__ == '__main__':
             if args.modeltype == "CVIB" or args.modeltype == "CVIB_SEQ":
                 running_bce_loss += bce_loss.detach().item()
                 running_info_loss += info_loss.detach().item()
+            if args.modeltype == "DR":
+                running_ips_loss += ips_loss.detach().item()
+                running_direct_loss += direct_loss.detach().item()
+
 
             num_batches += 1
 
@@ -566,6 +605,10 @@ if __name__ == '__main__':
             perf_str = 'Epoch %d [%.1fs]: train==[%.5f=%.5f + %.5f]' % (
                 epoch, t2 - t1, running_loss / num_batches,
                 running_bce_loss / num_batches, running_info_loss / num_batches)
+        elif args.modeltype=="DR":
+            perf_str = 'Epoch %d [%.1fs]: train==[%.5f=%.5f + %.5f]' % (
+                epoch, t2 - t1, running_loss / num_batches,
+                running_ips_loss / num_batches, running_direct_loss / num_batches)
         else:
             perf_str = 'Epoch %d [%.1fs]: train==[%.5f=%.5f + %.5f]' % (
                 epoch, t2 - t1, running_loss / num_batches,
@@ -591,6 +634,10 @@ if __name__ == '__main__':
         
     # Get result
     model = restore_best_checkpoint(data.best_valid_epoch, model, base_path, device)
+    ndcg_res = ndcg_func(model, x_test, y_test, device)
+    print("ndcg_5: ", np.mean(ndcg_res["ndcg_5"]))
+    print("ndcg_10: ",  np.mean(ndcg_res["ndcg_10"]))
+
     print_str = "The best epoch is % d" % data.best_valid_epoch
     with open(base_path +'stats_{}.txt'.format(args.saveID), 'a') as f:
         f.write(print_str + "\n")

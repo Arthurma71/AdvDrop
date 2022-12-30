@@ -760,6 +760,7 @@ class INV_LGN_DUAL(MF):
         self.inv_loss = Inv_Loss_Embed(args)
         self.M = Mask_Model_Attention(args)
         self.warmup = True
+        self.sigmoid = nn.Sigmoid()
 
         self.embed_user_dual = nn.Embedding(self.n_users, self.emb_dim)
         self.embed_item_dual = nn.Embedding(self.n_items, self.emb_dim)
@@ -949,6 +950,15 @@ class INV_LGN_DUAL(MF):
             for param in self.M.parameters():
                 param.requires_grad = False
 
+    def new_predict(self, user_idx, item_idx):
+        all_users, all_items = self.compute()
+        users_emb = all_users[user_idx]
+        all_emb = all_items[item_idx]
+
+        pred = torch.sum(torch.mul(users_emb, all_emb), dim=1)
+        pred = self.sigmoid(pred)
+
+        return pred.detach().cpu().numpy()
 
 
 class CVIB(MF):
@@ -986,25 +996,16 @@ class CVIB(MF):
 
         return users, items
     
-
-
-    def forward(self, users, pos_items, neg_items, sampled_user, sampled_items):
+    def forward(self, users, pos_items, labels, sampled_user, sampled_items):
         # input is a user, a positive, a negative.
         all_users, all_items = self.compute()
         users_emb = all_users[users]
         pos_emb = all_items[pos_items]
-        neg_emb = all_items[neg_items]
-        all_emb = torch.cat((pos_emb, neg_emb),0)
 
-
-        pos_label = torch.ones((len(pos_emb),))
-        neg_label = torch.zeros((len(neg_emb),))
-        all_label = torch.cat((pos_label, neg_label),0)
-
-        pred = torch.sum(torch.mul(torch.cat((users_emb, users_emb),0), all_emb), dim=1)
+        pred = torch.sum(torch.mul(users_emb, pos_emb), dim=1)
         pred = self.sigmoid(pred)
         # need label 
-        bce_loss = self.bce(pred, all_label.cuda(self.device))
+        bce_loss = self.bce(pred, labels)
 
         sampled_user_emb = all_users[sampled_user]
         sampled_item_emb = all_items[sampled_items]
@@ -1020,23 +1021,65 @@ class CVIB(MF):
 
         return bce_loss, info_loss
 
+    # def forward(self, users, pos_items, neg_items, sampled_user, sampled_items):
+    #     # input is a user, a positive, a negative.
+    #     all_users, all_items = self.compute()
+    #     users_emb = all_users[users]
+    #     pos_emb = all_items[pos_items]
+    #     neg_emb = all_items[neg_items]
+    #     all_emb = torch.cat((pos_emb, neg_emb),0)
+
+
+    #     pos_label = torch.ones((len(pos_emb),))
+    #     neg_label = torch.zeros((len(neg_emb),))
+    #     all_label = torch.cat((pos_label, neg_label),0)
+
+    #     pred = torch.sum(torch.mul(torch.cat((users_emb, users_emb),0), all_emb), dim=1)
+    #     pred = self.sigmoid(pred)
+    #     # need label 
+    #     bce_loss = self.bce(pred, all_label.cuda(self.device))
+
+    #     sampled_user_emb = all_users[sampled_user]
+    #     sampled_item_emb = all_items[sampled_items]
+    #     pred_ul = torch.sum(torch.mul(sampled_user_emb, sampled_item_emb), dim=1)
+    #     pred_ul = self.sigmoid(pred_ul)
+
+    #     logp_hat = pred.log()
+
+    #     pred_avg = pred.mean()
+    #     pred_ul_avg = pred_ul.mean()
+        
+    #     info_loss = self.alpha * (- pred_avg * pred_ul_avg.log() - (1-pred_avg) * (1-pred_ul_avg).log()) + self.gamma* torch.mean(pred * logp_hat)
+
+    #     return bce_loss, info_loss
+
     def generate_total_sample(self, num_users, num_items):
         sample = []
         for i in range(num_users):
             sample.extend([[i,j] for j in range(num_items)])
         return np.array(sample)
     
-    def predict(self, users, items=None):
-        if items is None:
-            items = list(range(self.n_items))
+    # def predict(self, users, items=None):
+    #     if items is None:
+    #         items = list(range(self.n_items))
 
+    #     all_users, all_items = self.compute()
+
+    #     users = all_users[torch.tensor(users).cuda(self.device)]
+    #     items = torch.transpose(all_items[torch.tensor(items).cuda(self.device)], 0, 1)
+    #     rate_batch = torch.matmul(users, items)
+
+    #     return rate_batch.cpu().detach().numpy()
+
+    def predict(self, user_idx, item_idx):
         all_users, all_items = self.compute()
+        users_emb = all_users[user_idx]
+        all_emb = all_items[item_idx]
 
-        users = all_users[torch.tensor(users).cuda(self.device)]
-        items = torch.transpose(all_items[torch.tensor(items).cuda(self.device)], 0, 1)
-        rate_batch = torch.matmul(users, items)
+        pred = torch.sum(torch.mul(users_emb, all_emb), dim=1)
+        pred = self.sigmoid(pred)
 
-        return rate_batch.cpu().detach().numpy()
+        return pred.detach().cpu().numpy()
 
 
 
@@ -1120,18 +1163,123 @@ class CVIB_SEQ(MF):
 
         return rate_batch.cpu().detach().numpy()
 
-    # def predict(self, x):
-    #     user_idx = torch.LongTensor(x[:,0])
-    #     item_idx = torch.LongTensor(x[:,1])
+    def new_predict(self, user_idx, item_idx):
+        all_users, all_items = self.compute()
+        users_emb = all_users[user_idx]
+        all_emb = all_items[item_idx]
 
-    #     all_users, all_items = self.compute()
-    #     users_emb = all_users[user_idx]
-    #     all_emb = all_items[item_idx]
+        pred = torch.sum(torch.mul(users_emb, all_emb), dim=1)
+        pred = self.sigmoid(pred)
 
-    #     pred = torch.sum(torch.mul(users_emb, all_emb), dim=1)
-    #     pred = self.sigmoid(pred)
+        return pred.detach().cpu().numpy()
 
-    #     return pred.detach().numpy()
+
+class DR(MF):
+    def __init__(self, args, data):
+        super().__init__(args, data)
+        self.Graph = data.getSparseGraph().cuda(self.device)
+        self.n_layers = args.n_layers
+        self.all_samples = self.generate_total_sample(self.n_users, self.n_items)
+        self.sigmoid = nn.Sigmoid()
+        self.bce = nn.BCELoss()
+        self.ul_idxs = np.arange(self.all_samples.shape[0])
+        self.alpha = args.cvib_alpha
+        self.gamma = args.cvib_gamma
+        self.args = args
+        self.data = data
+
+    def shuffle(self):
+        np.random.shuffle(self.ul_idxs)
+
+    def generate_total_sample(self, num_users, num_items):
+        sample = []
+        for i in range(num_users):
+            sample.extend([[i,j] for j in range(num_items)])
+        return np.array(sample)
+
+    def compute(self):
+        users_emb = self.embed_user.weight
+        items_emb = self.embed_item.weight
+        all_emb = torch.cat([users_emb, items_emb])
+
+        embs = [all_emb]
+        g_droped = self.Graph
+
+        for layer in range(self.n_layers):
+            all_emb = torch.sparse.mm(g_droped, all_emb)
+            embs.append(all_emb)
+        embs = torch.stack(embs, dim=1)
+
+        light_out = torch.mean(embs, dim=1)
+        users, items = torch.split(light_out, [self.n_users, self.n_items])
+
+        return users, items
+    
+    def _compute_IPS(self,user_index, item_index, y,y_ips=None):
+        if y_ips is None:
+            one_over_zl = np.ones(len(y))
+        else:
+            py1 = y_ips.sum() / len(y_ips)
+            py0 = 1 - py1
+            po1 = len(user_index) / (max(user_index) * max(item_index))
+            py1o1 = sum(y) / len(y)
+            py0o1 = 1 - py1o1
+
+            propensity = np.zeros(len(y))
+
+            propensity[y == 0] = (py0o1 * po1) / py0
+            propensity[y == 1] = (py1o1 * po1) / py1
+            one_over_zl = 1 / (propensity + 1e-6)
+
+        one_over_zl = torch.Tensor(one_over_zl)
+        return one_over_zl
+    
+    def forward(self, users, items, labels, sampled_user, sampled_items,inv_prop, imputation_y):
+        all_users, all_items = self.compute()
+        users_emb = all_users[users]
+        items_emb = all_items[items]
+        
+        pred = torch.sum(torch.mul(users_emb, items_emb), dim=1)
+        pred = self.sigmoid(pred)
+
+        sampled_user_emb = all_users[sampled_user]
+        sampled_item_emb = all_items[sampled_items]
+        pred_ul = torch.sum(torch.mul(sampled_user_emb, sampled_item_emb), dim=1)
+        pred_ul = self.sigmoid(pred_ul)
+        # print(max(labels), min(labels))
+        xent_loss = F.binary_cross_entropy(pred, labels, weight=inv_prop, reduction="sum")
+        # print(max(imputation_y), min(imputation_y))
+        imputation_loss = F.binary_cross_entropy(pred, imputation_y, reduction="sum")
+
+        ips_loss = (xent_loss - imputation_loss)/len(labels)
+
+        # direct loss
+        direct_loss = F.binary_cross_entropy(pred_ul, imputation_y,reduction="mean")
+        return ips_loss, direct_loss
+
+
+    def predict(self, users, items=None):
+        if items is None:
+            items = list(range(self.n_items))
+
+        all_users, all_items = self.compute()
+
+        users = all_users[torch.tensor(users).cuda(self.device)]
+        items = torch.transpose(all_items[torch.tensor(items).cuda(self.device)], 0, 1)
+        rate_batch = torch.matmul(users, items)
+
+        return rate_batch.cpu().detach().numpy()
+    
+    def new_predict(self, user_idx, item_idx):
+        all_users, all_items = self.compute()
+        users_emb = all_users[user_idx]
+        all_emb = all_items[item_idx]
+
+        pred = torch.sum(torch.mul(users_emb, all_emb), dim=1)
+        pred = self.sigmoid(pred)
+
+        return pred.detach().cpu().numpy()
+
 
 
 

@@ -225,3 +225,10 @@ def sparse_dense_mul(s, d):
     v = s._values()
     dv = d[i[0,:], i[1,:]]  # get values from relevant entries of dense matrix
     return torch.sparse.FloatTensor(i, v * dv, s.size())
+
+def binarize(y, thres=3):
+    """Given threshold, binarize the ratings.
+    """
+    y[y< thres] = 0
+    y[y>=thres] = 1
+    return y
