@@ -6,3 +6,4 @@
 *.npz
 *.tar
 *.so
+runs/*

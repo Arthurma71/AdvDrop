@@ -131,15 +131,30 @@ class UniEvaluator(CPPEvaluator):
         #print(self.pop_mask)
         
         for batch_users in test_users:
+            #print(batch_users)
             if self.user_neg_test is not None:
-                candidate_items = [list(self.user_pos_test[u]) + self.user_neg_test[u] for u in batch_users]
-                test_items = [set(range(len(self.user_pos_test[u]))) for u in batch_users]
+                candidate_items = [list(self.user_pos_test[u]) + self.user_neg_test[u] if u in self.user_neg_test else list(self.user_pos_test[u]) for u in batch_users]
+                test_items = [self.user_pos_test[u] for u in batch_users]
 
-                ranking_score = model.predict(batch_users, candidate_items)  # (B,N)
-                ranking_score = pad_sequences(ranking_score, value=-np.inf, dtype=float_type)
+                ranking_score = model.predict(batch_users, None)  # (B,N)
+                #ranking_score = pad_sequences(ranking_score, value=-np.inf, dtype=float_type)
+
+               
 
                 if not is_ndarray(ranking_score, float_type):
                     ranking_score = np.array(ranking_score, dtype=float_type)
+
+                for idx, user in enumerate(batch_users):
+                    unobserved_items = [ x for x in range(ranking_score.shape[1]) if not x in candidate_items[idx]]
+                    ranking_score[idx][unobserved_items] = -np.inf
+                    train_items = self.user_pos_dump[user]
+                    train_items = [ x for x in train_items if not x in self.user_pos_test[user] ]
+                    ranking_score[idx][train_items] = -np.inf
+                    if self.pop_mask!=None:
+                        for pp in self.pop_mask:
+                            ranking_score[idx][pp] = 1e9+pp
+            
+
             else:
                 test_items = [self.user_pos_test[u] for u in batch_users]
                 ranking_score = model.predict(batch_users, None)  # (B,N)
@@ -158,8 +173,10 @@ class UniEvaluator(CPPEvaluator):
                         for pp in self.pop_mask:
                             ranking_score[idx][pp] = 1e9+pp
 
+            #print(ranking_score[0])
             result = self.eval_score_matrix(ranking_score, test_items, self.metrics,
                                             top_k=self.max_top, thread_num=self.num_thread)  # (B,k*metric_num)
+            #print(result)
             batch_result.append(result)
 
         # concatenate the batch results to a matrix

@@ -86,6 +86,7 @@ class Data:
         self.infonce = args.infonce
         self.num_workers = args.num_workers
         self.dataset=args.dataset
+        self.use_neg_test= args.neg_test
         
 
         # Number of total users and items
@@ -103,6 +104,7 @@ class Data:
         self.test_ood_user_list = collections.defaultdict(list)
         self.test_id_user_list = collections.defaultdict(list)
         self.train_neg_user_list = None
+        self.test_neg_user_list = None
 
         # Used to track early stopping point
         self.best_valid_recall = -np.inf
@@ -128,7 +130,9 @@ class Data:
 
         if 'coat' in self.dataset:
             self.train_neg_user_list, _  = helper_load(self.path + 'train_neg.txt')
-            print(self.train_neg_user_list)
+            if self.use_neg_test:
+                self.test_neg_user_list, _ = helper_load(self.path + 'test_neg.txt')
+            #print(self.train_neg_user_list)
 
         self.pop_dict_list = []
 

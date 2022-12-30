@@ -50,7 +50,9 @@ def parse_args():
     parser.add_argument('--num_workers', type=int, default=8,
                         help='number of workers in data loader')
     parser.add_argument('--neg_sample', type=int, default=1,
-                        help='negative sample ratio.')    
+                        help='negative sample ratio.')
+    parser.add_argument('--neg_test', type=bool, default=True,
+                        help='whether to use neg items for testing')
 
     # MACR
     parser.add_argument('--alpha', type=float, default=1e-3,

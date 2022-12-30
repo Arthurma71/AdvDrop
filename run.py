@@ -86,10 +86,10 @@ if __name__ == '__main__':
     if not args.pop_test:
         eval_test_ood = ProxyEvaluator(data, data.train_user_list, data.test_ood_user_list, top_k=[20],
                                        dump_dict=merge_user_list(
-                                           [data.train_user_list, data.valid_user_list, data.test_id_user_list]))
+                                           [data.train_user_list, data.valid_user_list, data.test_id_user_list]),user_neg_test=data.test_user_neg_list)
         eval_test_id = ProxyEvaluator(data, data.train_user_list, data.test_id_user_list, top_k=[20],
                                       dump_dict=merge_user_list(
-                                          [data.train_user_list, data.valid_user_list, data.test_ood_user_list]))
+                                          [data.train_user_list, data.valid_user_list, data.test_ood_user_list]),user_neg_test=data.test_user_neg_list)
         eval_valid = ProxyEvaluator(data, data.train_user_list, data.valid_user_list, top_k=[20])
     else:
         eval_test_ood = ProxyEvaluator(data, data.train_user_list, data.test_ood_user_list, top_k=[20],
