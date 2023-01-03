@@ -16,7 +16,7 @@ import collections
 import os
 from data import Data
 from parse import parse_args
-from model import INV_LGN_DUAL, LGN
+from model import INV_LGN_DUAL, LGN, INV_LGN_DUAL_SEQ
 from torch.utils.data import Dataset, DataLoader
 from utils import *
 from torch.utils.tensorboard import SummaryWriter
@@ -85,10 +85,10 @@ if __name__ == '__main__':
     print(pop_mask)
 
     if not args.pop_test:
-        eval_test_ood = ProxyEvaluator(data, data.train_user_list, data.test_ood_user_list, top_k=[5],
+        eval_test_ood = ProxyEvaluator(data, data.train_user_list, data.test_ood_user_list, top_k=[3],
                                        dump_dict=merge_user_list(
                                            [data.train_user_list, data.valid_user_list, data.test_id_user_list]),user_neg_test=data.test_neg_user_list)
-        eval_test_id = ProxyEvaluator(data, data.train_user_list, data.test_id_user_list, top_k=[10],
+        eval_test_id = ProxyEvaluator(data, data.train_user_list, data.test_id_user_list, top_k=[5],
                                       dump_dict=merge_user_list(
                                           [data.train_user_list, data.valid_user_list, data.test_ood_user_list]),user_neg_test=data.test_neg_user_list)
         eval_valid = ProxyEvaluator(data, data.train_user_list, data.valid_user_list, top_k=[20])
@@ -110,6 +110,8 @@ if __name__ == '__main__':
         model = INV_LGN_DUAL(args, data,writer)
     if args.modeltype == 'LGN':
         model = LGN(args, data)
+    if args.modeltype == 'INV_LGN_DUAL_SEQ':
+        model = INV_LGN_DUAL_SEQ(args, data,writer)
     #    b=args.sample_beta
     model.cuda(device)
 
@@ -162,19 +164,27 @@ if __name__ == '__main__':
                 
                 for batch_i, batch in pbar:
                     batch = [x.cuda(device) for x in batch]
-                    users = batch[0]
-                    pos_items = batch[1]
-                    users_pop = batch[2]
-                    pos_items_pop = batch[3]
-                    pos_weights = batch[4]
-                    neg_items = batch[5]
-                    neg_items_pop = batch[6]
+                    if 'SEQ' in args.modeltype:
+                        users = batch[0]
+                        items = batch[1]
+                        labels = batch[2].float()
+                    else:
+                        users = batch[0]
+                        pos_items = batch[1]
+                        users_pop = batch[2]
+                        pos_items_pop = batch[3]
+                        pos_weights = batch[4]
+                        neg_items = batch[5]
+                        neg_items_pop = batch[6]
 
                     model.train()
 
-                    my_grad = model.forward_ARM(users, pos_items, neg_items)
+                    my_grad = model.forward_ARM()
                     mask = model.get_mask(True)
-                    _, _, inv_loss = model(users, pos_items, neg_items)
+                    if 'SEQ' in args.modeltype:
+                        _, _, inv_loss = model(users, items, labels)
+                    else:
+                        _, _, inv_loss = model(users, pos_items, neg_items)
 
 
                     # loss = -inv_loss
@@ -215,18 +225,26 @@ if __name__ == '__main__':
         # training step
         for batch_i, batch in pbar:
             batch = [x.cuda(device) for x in batch]
-            users = batch[0]
-            pos_items = batch[1]
-            users_pop = batch[2]
-            pos_items_pop = batch[3]
-            pos_weights = batch[4]
-            neg_items = batch[5]
-            neg_items_pop = batch[6]
+            if 'SEQ' in args.modeltype:
+                users = batch[0]
+                items = batch[1]
+                labels = batch[2].float()
+            else:
+                users = batch[0]
+                pos_items = batch[1]
+                users_pop = batch[2]
+                pos_items_pop = batch[3]
+                pos_weights = batch[4]
+                neg_items = batch[5]
+                neg_items_pop = batch[6]
 
             model.train()
             #print(mf_loss.requires_grad)
             #print(reg_loss.requires_grad)
-            mf_loss, reg_loss, inv_loss = model(users, pos_items, neg_items)
+            if 'SEQ' in args.modeltype:
+                mf_loss, reg_loss, inv_loss = model(users, items, labels)
+            else:
+                mf_loss, reg_loss, inv_loss = model(users, pos_items, neg_items)
             loss = mf_loss + reg_loss +  inv_loss
 
             # print(torch.cuda.memory_allocated(model.device))

@@ -18,7 +18,7 @@ import os
 from utils import *
 from data import Data
 from parse import parse_args
-from model import CausE, IPS, LGN, MACR, INFONCE_batch, INFONCE, SAMREG, BC_LOSS, BC_LOSS_batch, SimpleX, SimpleX_batch, INV_LGN_DUAL, CVIB, CVIB_SEQ, DR
+from model import CausE, IPS, LGN, MACR, INFONCE_batch, INFONCE, SAMREG, BC_LOSS, BC_LOSS_batch, SimpleX, SimpleX_batch, INV_LGN_DUAL, CVIB, CVIB_SEQ, DR, LGN_SEQ, IPS_SEQ
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from data_new import load_data
@@ -262,14 +262,14 @@ if __name__ == '__main__':
     start = time.time()
     args = parse_args()
     if "coat" in args.dataset:
-        train_mat, test_mat = load_data("coat")        
+        train_mat, test_mat = load_data(args.dataset)        
         x_train, y_train = rating_mat_to_sample(train_mat)
         x_test, y_test = rating_mat_to_sample(test_mat)
         num_user = train_mat.shape[0]
         num_item = train_mat.shape[1]
 
     elif 'yahoo' in args.dataset:
-        x_train, y_train, x_test, y_test = load_data("yahoo")
+        x_train, y_train, x_test, y_test = load_data(args.dataset)
         num_user = x_train[:,0].max() + 1
         num_item = x_train[:,1].max() + 1
 
@@ -343,6 +343,8 @@ if __name__ == '__main__':
         eval_test_ood = ProxyEvaluator(data,data.train_user_list,data.test_ood_user_list,top_k=[3],dump_dict=merge_user_list([data.train_user_list,data.valid_user_list,data.test_id_user_list]),user_neg_test=data.test_neg_user_list)
         eval_test_id = ProxyEvaluator(data,data.train_user_list,data.test_id_user_list,top_k=[5],dump_dict=merge_user_list([data.train_user_list,data.valid_user_list,data.test_ood_user_list]),user_neg_test=data.test_neg_user_list)
         eval_valid = ProxyEvaluator(data,data.train_user_list,data.valid_user_list,top_k=[5])
+        if 'coat' in args.dataset or 'yahoo' in args.dataset:
+            eval_valid=ProxyEvaluator(data,data.train_user_list,data.test_id_user_list,top_k=[5],dump_dict=merge_user_list([data.train_user_list,data.valid_user_list,data.test_ood_user_list]),user_neg_test=data.test_neg_user_list)
     else:
         eval_test_ood = ProxyEvaluator(data,data.train_user_list,data.test_ood_user_list,top_k=[20],dump_dict=merge_user_list([data.train_user_list,data.valid_user_list,data.test_id_user_list]),pop_mask=pop_mask)
         eval_test_id = ProxyEvaluator(data,data.train_user_list,data.test_id_user_list,top_k=[20],dump_dict=merge_user_list([data.train_user_list,data.valid_user_list,data.test_ood_user_list]),pop_mask=pop_mask)
@@ -381,6 +383,10 @@ if __name__ == '__main__':
         model = CVIB_SEQ(args, data)
     if args.modeltype == 'DR':
         model = DR(args, data)
+    if args.modeltype == 'LGN_SEQ':
+        model = LGN_SEQ(args, data)
+    if args.modeltype == 'IPS_SEQ':
+        model = IPS_SEQ(args, data)
 
     
 #    b=args.sample_beta
@@ -400,7 +406,7 @@ if __name__ == '__main__':
     flag = False
     if args.modeltype == 'INV_LGN_DUAL':
         model.freeze_args(False)
-    if args.modeltype == 'DR':
+    if args.modeltype == 'DR' or args.modeltype == 'IPS_SEQ':
         ips_idxs = np.arange(len(y_test))
         np.random.shuffle(ips_idxs)
         y_ips = y_test[ips_idxs[:int(0.05 * len(ips_idxs))]]
@@ -432,14 +438,17 @@ if __name__ == '__main__':
 
         pbar = tqdm(enumerate(data.train_loader), total = len(data.train_loader))
         
-        if args.modeltype == 'CVIB' or args.modeltype == 'DR':
+        if args.modeltype == 'CVIB' or args.modeltype == 'DR' or args.modeltype == 'CVIB_SEQ':
             model.shuffle()
 
         for batch_i, batch in pbar:            
             batch = [x.cuda(device) for x in batch]
 
-            if args.modeltype != 'CVIB_SEQ' and args.modeltype != 'DR':
-
+            if args.modeltype == 'DR' or 'SEQ' in args.modeltype:
+                users = batch[0]
+                items = batch[1]
+                labels = batch[2].float()
+            else:
                 users = batch[0]
                 pos_items = batch[1]
 
@@ -450,10 +459,6 @@ if __name__ == '__main__':
                     if args.infonce == 0 or args.neg_sample != -1:
                         neg_items = batch[5]
                         neg_items_pop = batch[6]
-            else:
-                users = batch[0]
-                items = batch[1]
-                labels = batch[2].float()
 
             model.train()
          
@@ -535,6 +540,13 @@ if __name__ == '__main__':
                 imputation_y = torch.Tensor([prior_y]*args.batch_size)
                 ips_loss, direct_loss = model(users, items, labels, sampled_user, sampled_items,inv_prop.cuda(device), imputation_y.cuda(device))
                 loss = ips_loss + direct_loss
+            elif args.modeltype == "IPS_SEQ": 
+                inv_prop = one_over_zl[batch_i*args.batch_size:(batch_i+1)*args.batch_size]
+                bce_loss, reg_loss = model(users, items, labels, inv_prop.cuda(device))
+                loss = bce_loss + reg_loss
+            elif args.modeltype == "LGN_SEQ":
+                bce_loss, reg_loss = model(users,items,labels)
+                loss = bce_loss + reg_loss
 
             else:
                 mf_loss, reg_loss = model(users, pos_items, neg_items)
@@ -549,8 +561,8 @@ if __name__ == '__main__':
             running_loss += loss.detach().item()
             if args.modeltype != "CVIB" and args.modeltype !=  "CVIB_SEQ" and args.modeltype !=  "DR":
                 running_reg_loss += reg_loss.detach().item()
-
-            if args.modeltype != 'BC_LOSS' and args.modeltype != 'BC_LOSS_batch' and args.modeltype != "CVIB" and args.modeltype != "CVIB_SEQ" and args.modeltype != "DR":
+                
+            if args.modeltype != 'BC_LOSS' and args.modeltype != 'BC_LOSS_batch' and args.modeltype != "CVIB" and args.modeltype != "CVIB_SEQ" and args.modeltype != "DR" and 'SEQ' not in args.modeltype:
                 running_mf_loss += mf_loss.detach().item()
             
             if args.modeltype == 'CausE':
@@ -567,9 +579,15 @@ if __name__ == '__main__':
             if args.modeltype == "CVIB" or args.modeltype == "CVIB_SEQ":
                 running_bce_loss += bce_loss.detach().item()
                 running_info_loss += info_loss.detach().item()
+            if args.modeltype == "LGN_SEQ":
+                running_bce_loss += bce_loss.detach().item()
+                running_reg_loss += reg_loss.detach().item()
             if args.modeltype == "DR":
                 running_ips_loss += ips_loss.detach().item()
                 running_direct_loss += direct_loss.detach().item()
+            if args.modeltype == "IPS_SEQ":
+                running_bce_loss += bce_loss.detach().item()
+                running_reg_loss += reg_loss.detach().item()
 
 
             num_batches += 1
@@ -607,6 +625,14 @@ if __name__ == '__main__':
             perf_str = 'Epoch %d [%.1fs]: train==[%.5f=%.5f + %.5f]' % (
                 epoch, t2 - t1, running_loss / num_batches,
                 running_ips_loss / num_batches, running_direct_loss / num_batches)
+        elif args.modeltype=="LGN_SEQ":
+            perf_str = 'Epoch %d [%.1fs]: train==[%.5f=%.5f + %.5f]' % (
+                epoch, t2 - t1, running_loss / num_batches,
+                running_bce_loss / num_batches, running_reg_loss / num_batches)
+        elif args.modeltype=="IPS_SEQ":
+            perf_str = 'Epoch %d [%.1fs]: train==[%.5f=%.5f + %.5f]' % (
+                epoch, t2 - t1, running_loss / num_batches,
+                running_bce_loss / num_batches, running_reg_loss / num_batches)
         else:
             perf_str = 'Epoch %d [%.1fs]: train==[%.5f=%.5f + %.5f]' % (
                 epoch, t2 - t1, running_loss / num_batches,

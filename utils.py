@@ -226,7 +226,7 @@ def sparse_dense_mul(s, d):
     dv = d[i[0,:], i[1,:]]  # get values from relevant entries of dense matrix
     return torch.sparse.FloatTensor(i, v * dv, s.size())
 
-def binarize(y, thres=3):
+def binarize(y, thres=4):
     """Given threshold, binarize the ratings.
     """
     y[y< thres] = 0
@@ -250,7 +250,7 @@ def ndcg_func(model, x_te, y_te, device, top_k_list = [5, 10]):
     """
     all_user_idx = np.unique(x_te[:,0])
     all_tr_idx = np.arange(len(x_te))
-    result_map = defaultdict(list)
+    result_map = collections.defaultdict(list)
 
     for uid in all_user_idx:
         u_idx = all_tr_idx[x_te[:,0] == uid]

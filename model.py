@@ -138,6 +138,52 @@ class IPS(LGN):
         return mf_loss, reg_loss
 
 
+class IPS_SEQ(IPS):
+    def __init__(self, args, data):
+        super().__init__(args, data)
+        self.data = data 
+        self.sigmoid = torch.nn.Sigmoid()
+        self.xent_func = torch.nn.BCELoss(reduction='none')
+    def forward(self, users, items, labels, weights):
+        all_users, all_items = self.compute()
+
+        users_emb = all_users[users]
+        itms_emb = all_items[items]
+        userEmb0 = self.embed_user(users)
+        itemEmb0 = self.embed_item(items)
+
+        scores = torch.sum(torch.mul(users_emb, itms_emb), dim=1)  # users, pos_items, neg_items have the same shape
+        pred = self.sigmoid(scores)
+        xent_loss = self.xent_func(pred,labels)
+
+        regularizer = 0.5 * torch.norm(userEmb0) ** 2 + 0.5 * torch.norm(itemEmb0) ** 2 
+        regularizer = regularizer / self.batch_size
+        mf_loss = torch.mean(torch.mul(xent_loss, weights))
+        reg_loss = self.decay * regularizer
+
+        return mf_loss, reg_loss
+
+    def _compute_IPS(self,user_index, item_index, y,y_ips=None):
+        if y_ips is None:
+            one_over_zl = np.ones(len(y))
+        else:
+            py1 = y_ips.sum() / len(y_ips)
+            py0 = 1 - py1
+            po1 = len(user_index) / (max(user_index) * max(item_index))
+            py1o1 = sum(y) / len(y)
+            py0o1 = 1 - py1o1
+
+            propensity = np.zeros(len(y))
+
+            propensity[y == 0] = (py0o1 * po1) / py0
+            propensity[y == 1] = (py1o1 * po1) / py1
+            one_over_zl = 1 / (propensity + 1e-6)
+
+        one_over_zl = torch.Tensor(one_over_zl)
+        return one_over_zl
+    
+
+
 class CausE(LGN):
     def __init__(self, args, data):
         super().__init__(args, data)
@@ -886,7 +932,7 @@ class INV_LGN_DUAL(MF):
 
         return mask
 
-    def forward_ARM(self, users, pos_items, neg_items):
+    def forward_ARM(self):
 
         u=torch.rand(len(self.Graph.values())).cuda(self.device)
 
@@ -960,6 +1006,47 @@ class INV_LGN_DUAL(MF):
 
         return pred.detach().cpu().numpy()
 
+class INV_LGN_DUAL_SEQ(INV_LGN_DUAL):
+    def __init__(self, args, data, writer):
+        super().__init__(args, data, writer)
+        self.sigmoid = nn.Sigmoid()
+        self.bce = nn.BCELoss()
+    def forward(self, users, items, labels):
+        mf_loss=0
+        reg_loss=0
+        user_embeds=[]
+        item_embeds=[]
+
+        for dual_ind in [True,False]:
+            all_users, all_items =  self.compute(dual = dual_ind, dropout=True)
+            if dual_ind and self.args.dropout_type == 1:
+                mask = self.get_mask(dual_ind)
+                self.writer.add_histogram('Dropout Mask', mask, self.global_step)
+            user_embeds.append(all_users)
+            item_embeds.append(all_items)
+
+            users_emb = all_users[users]
+            items_emb = all_items[items]
+            userEmb0 = self.embed_user(users)
+            itemEmb0 = self.embed_item(items)
+
+            scores = torch.sum(torch.mul(users_emb, items_emb), dim=1)  # users, pos_items, neg_items have the same shape
+            pred = self.sigmoid(scores)
+            # need label 
+            bce_loss = self.bce(pred, labels)
+
+            regularizer = 0.5 * torch.norm(userEmb0) ** 2 + 0.5 * torch.norm(itemEmb0) ** 2
+            regularizer = regularizer / self.batch_size
+
+
+            mf_loss = mf_loss + bce_loss
+            reg_loss = reg_loss+ self.decay * regularizer
+        
+        inv_loss, losses=self.args.inv_tau*self.inv_loss(user_embeds, item_embeds)
+        #inv_loss = -self.inv_loss(item_embeds[0], item_embeds[1], user_embeds[0], user_embeds[1], users)
+
+        return mf_loss, reg_loss, inv_loss
+
 
 class CVIB(MF):
     def __init__(self, args, data):
@@ -996,16 +1083,25 @@ class CVIB(MF):
 
         return users, items
     
-    def forward(self, users, pos_items, labels, sampled_user, sampled_items):
+
+
+    def forward(self, users, pos_items, neg_items, sampled_user, sampled_items):
         # input is a user, a positive, a negative.
         all_users, all_items = self.compute()
         users_emb = all_users[users]
         pos_emb = all_items[pos_items]
+        neg_emb = all_items[neg_items]
+        all_emb = torch.cat((pos_emb, neg_emb),0)
 
-        pred = torch.sum(torch.mul(users_emb, pos_emb), dim=1)
+
+        pos_label = torch.ones((len(pos_emb),))
+        neg_label = torch.zeros((len(neg_emb),))
+        all_label = torch.cat((pos_label, neg_label),0)
+
+        pred = torch.sum(torch.mul(torch.cat((users_emb, users_emb),0), all_emb), dim=1)
         pred = self.sigmoid(pred)
         # need label 
-        bce_loss = self.bce(pred, labels)
+        bce_loss = self.bce(pred, all_label.cuda(self.device))
 
         sampled_user_emb = all_users[sampled_user]
         sampled_item_emb = all_items[sampled_items]
@@ -1021,65 +1117,23 @@ class CVIB(MF):
 
         return bce_loss, info_loss
 
-    # def forward(self, users, pos_items, neg_items, sampled_user, sampled_items):
-    #     # input is a user, a positive, a negative.
-    #     all_users, all_items = self.compute()
-    #     users_emb = all_users[users]
-    #     pos_emb = all_items[pos_items]
-    #     neg_emb = all_items[neg_items]
-    #     all_emb = torch.cat((pos_emb, neg_emb),0)
-
-
-    #     pos_label = torch.ones((len(pos_emb),))
-    #     neg_label = torch.zeros((len(neg_emb),))
-    #     all_label = torch.cat((pos_label, neg_label),0)
-
-    #     pred = torch.sum(torch.mul(torch.cat((users_emb, users_emb),0), all_emb), dim=1)
-    #     pred = self.sigmoid(pred)
-    #     # need label 
-    #     bce_loss = self.bce(pred, all_label.cuda(self.device))
-
-    #     sampled_user_emb = all_users[sampled_user]
-    #     sampled_item_emb = all_items[sampled_items]
-    #     pred_ul = torch.sum(torch.mul(sampled_user_emb, sampled_item_emb), dim=1)
-    #     pred_ul = self.sigmoid(pred_ul)
-
-    #     logp_hat = pred.log()
-
-    #     pred_avg = pred.mean()
-    #     pred_ul_avg = pred_ul.mean()
-        
-    #     info_loss = self.alpha * (- pred_avg * pred_ul_avg.log() - (1-pred_avg) * (1-pred_ul_avg).log()) + self.gamma* torch.mean(pred * logp_hat)
-
-    #     return bce_loss, info_loss
-
     def generate_total_sample(self, num_users, num_items):
         sample = []
         for i in range(num_users):
             sample.extend([[i,j] for j in range(num_items)])
         return np.array(sample)
     
-    # def predict(self, users, items=None):
-    #     if items is None:
-    #         items = list(range(self.n_items))
+    def predict(self, users, items=None):
+        if items is None:
+            items = list(range(self.n_items))
 
-    #     all_users, all_items = self.compute()
-
-    #     users = all_users[torch.tensor(users).cuda(self.device)]
-    #     items = torch.transpose(all_items[torch.tensor(items).cuda(self.device)], 0, 1)
-    #     rate_batch = torch.matmul(users, items)
-
-    #     return rate_batch.cpu().detach().numpy()
-
-    def predict(self, user_idx, item_idx):
         all_users, all_items = self.compute()
-        users_emb = all_users[user_idx]
-        all_emb = all_items[item_idx]
 
-        pred = torch.sum(torch.mul(users_emb, all_emb), dim=1)
-        pred = self.sigmoid(pred)
+        users = all_users[torch.tensor(users).cuda(self.device)]
+        items = torch.transpose(all_items[torch.tensor(items).cuda(self.device)], 0, 1)
+        rate_batch = torch.matmul(users, items)
 
-        return pred.detach().cpu().numpy()
+        return rate_batch.cpu().detach().numpy()
 
 
 
@@ -1140,10 +1194,13 @@ class CVIB_SEQ(MF):
 
         pred_avg = pred.mean()
         pred_ul_avg = pred_ul.mean()
+
+        L2_reg: torch.Tensor = self.get_L2_reg(users, items)
+        #L1_reg: torch.Tensor = self.get_L1_reg(users, items)
         
         info_loss = self.alpha * (- pred_avg * pred_ul_avg.log() - (1-pred_avg) * (1-pred_ul_avg).log()) + self.gamma* torch.mean(pred * logp_hat)
 
-        return bce_loss, info_loss
+        return bce_loss, info_loss*0.1+ L2_reg 
 
     def generate_total_sample(self, num_users, num_items):
         sample = []
@@ -1172,6 +1229,32 @@ class CVIB_SEQ(MF):
         pred = self.sigmoid(pred)
 
         return pred.detach().cpu().numpy()
+
+    def get_users_reg(self, users_id, norm: int):
+        embed_gmf: torch.Tensor = self.embed_user(users_id)
+        if norm == 2:
+            reg_loss: torch.Tensor = embed_gmf.norm(2).pow(2) / (float(len(users_id)) * float(self.emb_dim))
+        elif norm == 1:
+            reg_loss: torch.Tensor = embed_gmf.norm(1) / (float(len(users_id)) * float(self.emb_dim))
+        else:
+            raise KeyError('norm must be 1 or 2 !!! wdnmd !!')
+        return reg_loss
+        
+    def get_items_reg(self, items_id, norm: int):
+        embed_gmf: torch.Tensor = self.embed_item(items_id)
+        if norm == 2:
+            reg_loss: torch.Tensor = embed_gmf.norm(2).pow(2) / (float(len(items_id)) * float(self.emb_dim))
+        elif norm == 1:
+            reg_loss: torch.Tensor = embed_gmf.norm(1) / (float(len(items_id)) * float(self.emb_dim))
+        else:
+            raise KeyError('norm must be 1 or 2 !!! wdnmd !!')
+        return reg_loss
+
+    def get_L1_reg(self, users_id, items_id) -> torch.Tensor:
+        return self.get_users_reg(users_id, 1) + self.get_items_reg(items_id, 1)
+
+    def get_L2_reg(self, users_id, items_id) -> torch.Tensor:
+        return self.get_users_reg(users_id, 2) + self.get_items_reg(items_id, 2)
 
 
 class DR(MF):
@@ -1281,7 +1364,31 @@ class DR(MF):
         return pred.detach().cpu().numpy()
 
 
+class LGN_SEQ(LGN):
+    def __init__(self, args, data):
+        super().__init__(args, data)
+        self.sigmoid = torch.nn.Sigmoid()
+        self.xent_func = torch.nn.BCELoss()
+        
+    def forward(self, users, items, labels):
+        # input is a user, a positive, a negative.
+        all_users, all_items = self.compute()
 
+        users_emb = all_users[users]
+        itms_emb = all_items[items]
+        userEmb0 = self.embed_user(users)
+        itemEmb0 = self.embed_item(items)
+
+        scores = torch.sum(torch.mul(users_emb, itms_emb), dim=1)  # users, pos_items, neg_items have the same shape
+        pred = self.sigmoid(scores)
+        xent_loss = self.xent_func(pred,labels)
+
+        regularizer = 0.5 * torch.norm(userEmb0) ** 2 + 0.5 * torch.norm(itemEmb0) ** 2
+        regularizer = regularizer / self.batch_size
+
+        reg_loss = self.decay * regularizer
+
+        return xent_loss, reg_loss
 
 
 
