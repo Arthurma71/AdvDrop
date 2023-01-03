@@ -282,15 +282,16 @@ if __name__ == '__main__':
 
     start = time.time()
     args = parse_args()
+    print(str(args))
     if "coat" in args.dataset:
-        train_mat, test_mat = load_data(args.dataset)        
+        train_mat, test_mat = load_data('coat')        
         x_train, y_train = rating_mat_to_sample(train_mat)
         x_test, y_test = rating_mat_to_sample(test_mat)
         num_user = train_mat.shape[0]
         num_item = train_mat.shape[1]
 
     elif 'yahoo' in args.dataset:
-        x_train, y_train, x_test, y_test = load_data(args.dataset)
+        x_train, y_train, x_test, y_test = load_data('yahoo')
         num_user = x_train[:,0].max() + 1
         num_item = x_train[:,1].max() + 1
 
@@ -325,6 +326,10 @@ if __name__ == '__main__':
     run_path = './runs/{}/{}/{}'.format(args.dataset, args.modeltype, saveID)
     ensureDir(base_path)
     ensureDir(run_path)
+
+    with open(base_path +'stats_{}.txt'.format(args.saveID), 'a') as f:
+        f.write(str(args) + "\n")
+
 
     writer = SummaryWriter(log_dir=run_path)
 
@@ -685,18 +690,18 @@ if __name__ == '__main__':
         
     # Get result
     model = restore_best_checkpoint(data.best_valid_epoch, model, base_path, device)
-    ndcg_res = ndcg_func(model, x_test, y_test, device)
-    print("ndcg_5: ", np.mean(ndcg_res["ndcg_5"]))
-    print("ndcg_10: ",  np.mean(ndcg_res["ndcg_10"]))
+    # ndcg_res = ndcg_func(model, x_test, y_test, device)
+    # print("ndcg_5: ", np.mean(ndcg_res["ndcg_5"]))
+    # print("ndcg_10: ",  np.mean(ndcg_res["ndcg_10"]))
 
-    print_str = "The best epoch is % d" % data.best_valid_epoch
-    with open(base_path +'stats_{}.txt'.format(args.saveID), 'a') as f:
-        f.write(print_str + "\n")
+    # print_str = "The best epoch is % d" % data.best_valid_epoch
+    # with open(base_path +'stats_{}.txt'.format(args.saveID), 'a') as f:
+    #     f.write(print_str + "\n")
 
     for i,evaluator in enumerate(evaluators[:]):
         evaluation(args, data, model, epoch, base_path, evaluator, eval_names[i])
-    with open(base_path +'stats_{}.txt'.format(args.saveID), 'a') as f:
-        f.write(print_str + "\n")
+    # with open(base_path +'stats_{}.txt'.format(args.saveID), 'a') as f:
+    #     f.write(print_str + "\n")
 
 
 
