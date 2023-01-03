@@ -16,7 +16,7 @@ import collections
 import os
 from data import Data
 from parse import parse_args
-from model import INV_LGN_DUAL, LGN, INV_LGN_DUAL_SEQ
+from model import INV_LGN_DUAL, LGN, INV_LGN_DUAL_BCE
 from torch.utils.data import Dataset, DataLoader
 from utils import *
 from torch.utils.tensorboard import SummaryWriter
@@ -110,8 +110,8 @@ if __name__ == '__main__':
         model = INV_LGN_DUAL(args, data,writer)
     if args.modeltype == 'LGN':
         model = LGN(args, data)
-    if args.modeltype == 'INV_LGN_DUAL_SEQ':
-        model = INV_LGN_DUAL_SEQ(args, data,writer)
+    if args.modeltype == 'INV_LGN_DUAL_BCE':
+        model = INV_LGN_DUAL_BCE(args, data,writer)
     #    b=args.sample_beta
     model.cuda(device)
 

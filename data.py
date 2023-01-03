@@ -234,9 +234,12 @@ class Data:
         if self.modeltype == 'CausE':
             self.train_data = TrainDataset_cause(self.modeltype, self.users, self.train_user_list, self.n_observations, \
                                                 self.n_interactions, self.pop_item, self.n_items, self.infonce, self.neg_sample, self.items, self.sample_items)
-        elif self.modeltype == 'CVIB_SEQ':
+        elif "SEQ" in self.modeltype:
             self.train_data = TrainDataset(self.modeltype, self.users, self.train_user_list, self.user_pop_idx, self.item_pop_idx, \
                                         self.neg_sample, self.n_observations, self.n_items, self.sample_items, self.weights, self.infonce, self.items, self.train_neg_user_list,seq=True)
+        elif "DR" in self.modeltype:
+            self.train_data = TrainDataset(self.modeltype, self.users, self.train_user_list, self.user_pop_idx, self.item_pop_idx, \
+                                        self.neg_sample, self.n_observations, self.n_items, self.sample_items, self.weights, self.infonce, self.items, self.train_neg_user_list,is_dr=True)
         else:
             self.train_data = TrainDataset(self.modeltype, self.users, self.train_user_list, self.user_pop_idx, self.item_pop_idx, \
                                         self.neg_sample, self.n_observations, self.n_items, self.sample_items, self.weights, self.infonce, self.items)
@@ -353,7 +356,7 @@ class Data:
 class TrainDataset(torch.utils.data.Dataset):
 
     def __init__(self, modeltype, users, train_user_list, user_pop_idx, item_pop_idx, neg_sample, \
-                n_observations, n_items, sample_items, weights, infonce, items, train_neg_user_list=None,seq=False):
+                n_observations, n_items, sample_items, weights, infonce, items, train_neg_user_list=None,seq=False, is_dr = False):
         self.modeltype = modeltype
         self.users = users
         self.train_user_list = train_user_list
@@ -368,7 +371,8 @@ class TrainDataset(torch.utils.data.Dataset):
         self.items = items
         self.train_neg_user_list= train_neg_user_list
         self.seq=seq
-        if self.seq:
+        self.is_dr = is_dr
+        if self.seq or self.is_dr:
             self.user_seq=[]
             self.item_seq=[]
             self.lab_seq=[]
@@ -385,6 +389,12 @@ class TrainDataset(torch.utils.data.Dataset):
                         self.item_seq.append(i)
                         self.lab_seq.append(0)
             self.n_observations=len(self.user_seq)
+
+            ips_idxs = np.arange(len(self.lab_seq))
+            np.random.shuffle(ips_idxs)
+            y_ips = np.array(self.lab_seq)[ips_idxs[:int(0.05 * len(ips_idxs))]]
+            self.y_ips = y_ips
+
 
 
     def __getitem__(self, index):
@@ -418,8 +428,10 @@ class TrainDataset(torch.utils.data.Dataset):
             else:
                 neg_items = randint_choice(self.n_items, size=self.neg_sample)
             neg_items_pop = self.item_pop_idx[neg_items]
-
-            return user, pos_item, user_pop, pos_item_pop, pos_weight, torch.tensor(neg_items).long(), neg_items_pop
+            if self.is_dr:
+                return user, pos_item, user_pop, pos_item_pop, pos_weight, torch.tensor(neg_items).long(), neg_items_pop, self.y_ips.mean()
+            else:
+                return user, pos_item, user_pop, pos_item_pop, pos_weight, torch.tensor(neg_items).long(), neg_items_pop
         else:
 
             if self.train_neg_user_list != None:

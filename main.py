@@ -18,12 +18,33 @@ import os
 from utils import *
 from data import Data
 from parse import parse_args
-from model import CausE, IPS, LGN, MACR, INFONCE_batch, INFONCE, SAMREG, BC_LOSS, BC_LOSS_batch, SimpleX, SimpleX_batch, INV_LGN_DUAL, CVIB, CVIB_SEQ, DR, LGN_BCE, IPS_SEQ
+from model import CausE, IPS, LGN, MACR, INFONCE_batch, INFONCE, SAMREG, BC_LOSS, BC_LOSS_batch, SimpleX, SimpleX_batch, INV_LGN_DUAL, CVIB, CVIB_SEQ, DR, LGN_BCE, IPS_SEQ, DR_SEQ
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from data_new import load_data
 
+def compute_IPS(user_index, pos_item_index, neg_item_index, y_ips=None):
+    item_index = torch.cat((pos_item_index, neg_item_index),0)
+    pos_label = torch.ones((len(pos_item_index),))
+    neg_label = torch.zeros((len(neg_item_index),))
+    y = torch.cat((pos_label, neg_label),0) 
 
+    if y_ips is None:
+        one_over_zl = torch.ones(len(y))
+    else:
+        py1 = y_ips.sum() / len(y_ips)
+        py0 = 1 - py1
+        po1 = len(user_index) / (max(user_index) * max(item_index))
+        py1o1 = sum(y) / len(y)
+        py0o1 = 1 - py1o1
+
+        propensity = torch.zeros(len(y))
+
+        propensity[y == 0] = (py0o1 * po1) / py0
+        propensity[y == 1] = (py1o1 * po1) / py1
+        one_over_zl = 1 / (propensity + 1e-6)
+
+    return one_over_zl
 
 
 
@@ -383,6 +404,8 @@ if __name__ == '__main__':
         model = CVIB_SEQ(args, data)
     if args.modeltype == 'DR':
         model = DR(args, data)
+    if args.modeltype == 'DR_SEQ':
+        model = DR_SEQ(args, data)
     if args.modeltype == 'LGN_BCE':
         model = LGN_BCE(args, data)
     if args.modeltype == 'IPS_SEQ':
@@ -406,12 +429,12 @@ if __name__ == '__main__':
     flag = False
     if args.modeltype == 'INV_LGN_DUAL':
         model.freeze_args(False)
-    if args.modeltype == 'DR' or args.modeltype == 'IPS_SEQ':
-        ips_idxs = np.arange(len(y_test))
-        np.random.shuffle(ips_idxs)
-        y_ips = y_test[ips_idxs[:int(0.05 * len(ips_idxs))]]
-        one_over_zl = model._compute_IPS(model.data.train_data.user_seq, model.data.train_data.item_seq, model.data.train_data.lab_seq, y_ips)
-        prior_y = y_ips.mean()
+    # if 'DR' in args.modeltype or args.modeltype == 'IPS_SEQ':
+    #     ips_idxs = np.arange(len(y_test))
+    #     np.random.shuffle(ips_idxs)
+    #     y_ips = y_test[ips_idxs[:int(0.05 * len(ips_idxs))]]
+    #     one_over_zl = model._compute_IPS(model.data.train_data.user_seq, model.data.train_data.item_seq, model.data.train_data.lab_seq, y_ips)
+    #     prior_y = y_ips.mean()
 
 
     optimizer = torch.optim.Adam([ param for param in model.parameters() if param.requires_grad == True], lr=model.lr)
@@ -444,7 +467,7 @@ if __name__ == '__main__':
         for batch_i, batch in pbar:            
             batch = [x.cuda(device) for x in batch]
 
-            if args.modeltype == 'DR' or 'SEQ' in args.modeltype:
+            if 'SEQ' in args.modeltype:
                 users = batch[0]
                 items = batch[1]
                 labels = batch[2].float()
@@ -459,6 +482,10 @@ if __name__ == '__main__':
                     if args.infonce == 0 or args.neg_sample != -1:
                         neg_items = batch[5]
                         neg_items_pop = batch[6]
+                if 'DR' in args.modeltype:
+                    prior_y = batch[7]
+                    one_over_zl = compute_IPS(users, pos_items,neg_items, model.data.train_data.y_ips)
+
 
             model.train()
          
@@ -532,14 +559,18 @@ if __name__ == '__main__':
                 sampled_items = torch.LongTensor(x_sampled[:,1])
                 bce_loss, info_loss = model(users,items,labels,sampled_user,sampled_items)
                 loss = bce_loss + info_loss
-            elif args.modeltype == "DR":
+            elif "DR" in args.modeltype :
                 x_sampled = model.all_samples[model.ul_idxs[batch_i*args.batch_size:(batch_i+1)*args.batch_size]]
                 sampled_user = torch.LongTensor(x_sampled[:,0])
                 sampled_items = torch.LongTensor(x_sampled[:,1])
-                inv_prop = one_over_zl[batch_i*args.batch_size:(batch_i+1)*args.batch_size]
-                imputation_y = torch.Tensor([prior_y]*args.batch_size)
-                ips_loss, direct_loss = model(users, items, labels, sampled_user, sampled_items,inv_prop.cuda(device), imputation_y.cuda(device))
-                loss = ips_loss + direct_loss
+                inv_prop = one_over_zl
+                imputation_y = prior_y.float()
+                if "SEQ" in args.modeltype:
+                    ips_loss, direct_loss = model(users, items, labels, sampled_user, sampled_items,inv_prop.cuda(device), imputation_y.cuda(device))
+                    loss = ips_loss + direct_loss
+                else:
+                    ips_loss, direct_loss = model(users,pos_items, neg_items, sampled_user, sampled_items,inv_prop.cuda(device), imputation_y.cuda(device))
+                    loss = ips_loss + direct_loss
             elif args.modeltype == "IPS_SEQ": 
                 inv_prop = one_over_zl[batch_i*args.batch_size:(batch_i+1)*args.batch_size]
                 bce_loss, reg_loss = model(users, items, labels, inv_prop.cuda(device))
