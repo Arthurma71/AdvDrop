@@ -166,9 +166,10 @@ class UniEvaluator(CPPEvaluator):
                 # set the ranking scores of training items to -inf,
                 # then the training items will be sorted at the end of the ranking list.
                 for idx, user in enumerate(batch_users):
-                    train_items = self.user_pos_dump[user]
-                    train_items = [ x for x in train_items if not x in self.user_pos_test[user] ]
-                    ranking_score[idx][train_items] = -np.inf
+                    if user in self.user_pos_dump:
+                        train_items = self.user_pos_dump[user]
+                        train_items = [ x for x in train_items if not x in self.user_pos_test[user] ]
+                        ranking_score[idx][train_items] = -np.inf
                     if self.pop_mask!=None:
                         for pp in self.pop_mask:
                             ranking_score[idx][pp] = 1e9+pp

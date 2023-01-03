@@ -261,16 +261,15 @@ if __name__ == '__main__':
 
     start = time.time()
     args = parse_args()
-    if args.dataset == "coat":
+    if "coat" in args.dataset:
         train_mat, test_mat = load_data("coat")        
         x_train, y_train = rating_mat_to_sample(train_mat)
         x_test, y_test = rating_mat_to_sample(test_mat)
         num_user = train_mat.shape[0]
         num_item = train_mat.shape[1]
 
-    elif args.dataset == "yahoo":
+    elif 'yahoo' in args.dataset:
         x_train, y_train, x_test, y_test = load_data("yahoo")
-        x_train, y_train = shuffle(x_train, y_train)
         num_user = x_train[:,0].max() + 1
         num_item = x_train[:,1].max() + 1
 
@@ -341,8 +340,8 @@ if __name__ == '__main__':
     print(pop_mask)
 
     if not args.pop_test:
-        eval_test_ood = ProxyEvaluator(data,data.train_user_list,data.test_ood_user_list,top_k=[5],dump_dict=merge_user_list([data.train_user_list,data.valid_user_list,data.test_id_user_list]),user_neg_test=data.test_neg_user_list)
-        eval_test_id = ProxyEvaluator(data,data.train_user_list,data.test_id_user_list,top_k=[10],dump_dict=merge_user_list([data.train_user_list,data.valid_user_list,data.test_ood_user_list]),user_neg_test=data.test_neg_user_list)
+        eval_test_ood = ProxyEvaluator(data,data.train_user_list,data.test_ood_user_list,top_k=[3],dump_dict=merge_user_list([data.train_user_list,data.valid_user_list,data.test_id_user_list]),user_neg_test=data.test_neg_user_list)
+        eval_test_id = ProxyEvaluator(data,data.train_user_list,data.test_id_user_list,top_k=[5],dump_dict=merge_user_list([data.train_user_list,data.valid_user_list,data.test_ood_user_list]),user_neg_test=data.test_neg_user_list)
         eval_valid = ProxyEvaluator(data,data.train_user_list,data.valid_user_list,top_k=[5])
     else:
         eval_test_ood = ProxyEvaluator(data,data.train_user_list,data.test_ood_user_list,top_k=[20],dump_dict=merge_user_list([data.train_user_list,data.valid_user_list,data.test_id_user_list]),pop_mask=pop_mask)
