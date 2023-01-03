@@ -239,7 +239,7 @@ class Data:
                                         self.neg_sample, self.n_observations, self.n_items, self.sample_items, self.weights, self.infonce, self.items, self.train_neg_user_list,seq=True)
         else:
             self.train_data = TrainDataset(self.modeltype, self.users, self.train_user_list, self.user_pop_idx, self.item_pop_idx, \
-                                        self.neg_sample, self.n_observations, self.n_items, self.sample_items, self.weights, self.infonce, self.items, self.train_neg_user_list)
+                                        self.neg_sample, self.n_observations, self.n_items, self.sample_items, self.weights, self.infonce, self.items)
 
         self.train_loader = DataLoader(self.train_data, batch_size=self.batch_size, shuffle=True, num_workers=self.num_workers, drop_last=True)
     def get_weight(self):
@@ -353,7 +353,7 @@ class Data:
 class TrainDataset(torch.utils.data.Dataset):
 
     def __init__(self, modeltype, users, train_user_list, user_pop_idx, item_pop_idx, neg_sample, \
-                n_observations, n_items, sample_items, weights, infonce, items, train_neg_user_list=None,seq=True):
+                n_observations, n_items, sample_items, weights, infonce, items, train_neg_user_list=None,seq=False):
         self.modeltype = modeltype
         self.users = users
         self.train_user_list = train_user_list
@@ -394,10 +394,13 @@ class TrainDataset(torch.utils.data.Dataset):
 
         index = index % len(self.users)
         user = self.users[index]
-        if self.train_user_list[user] == []:
-            pos_items = 0
+        if user in self.train_user_list:
+            if self.train_user_list[user] == []:
+                pos_items = 0
+            else:
+                pos_item = rd.choice(self.train_user_list[user])
         else:
-            pos_item = rd.choice(self.train_user_list[user])
+            pos_item=0
 
         user_pop = self.user_pop_idx[user]
         pos_item_pop = self.item_pop_idx[pos_item]
@@ -410,26 +413,34 @@ class TrainDataset(torch.utils.data.Dataset):
             return user, pos_item, user_pop, pos_item_pop, pos_weight
 
         elif self.infonce == 1 and self.neg_sample != -1:
-
-            neg_items = randint_choice(self.n_items, size=self.neg_sample, exclusion=self.train_user_list[user])
+            if user in self.train_user_list:
+                neg_items = randint_choice(self.n_items, size=self.neg_sample, exclusion=self.train_user_list[user])
+            else:
+                neg_items = randint_choice(self.n_items, size=self.neg_sample)
             neg_items_pop = self.item_pop_idx[neg_items]
 
             return user, pos_item, user_pop, pos_item_pop, pos_weight, torch.tensor(neg_items).long(), neg_items_pop
         else:
 
             if self.train_neg_user_list != None:
-                if user in self.train_neg_user_list[user]:
+                if user in self.train_neg_user_list:
                     neg_item = rd.choice(self.train_neg_user_list[user])
                 else:
                     while True:
                         neg_item = self.items[rd.randint(0, self.n_items -1)]
-                        if neg_item not in self.train_user_list[user]:
+                        if user not in self.train_user_list:
                             break
+                        else:
+                            if neg_item not in self.train_user_list[user]:
+                                break
             else:
                 while True:
                     neg_item = self.items[rd.randint(0, self.n_items -1)]
-                    if neg_item not in self.train_user_list[user]:
+                    if user not in self.train_user_list:
                         break
+                    else:
+                        if neg_item not in self.train_user_list[user]:
+                            break
         
             neg_item_pop = self.item_pop_idx[neg_item]
             return user, pos_item, user_pop, pos_item_pop, pos_weight, neg_item, neg_item_pop
