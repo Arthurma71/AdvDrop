@@ -1364,31 +1364,38 @@ class DR(MF):
         return pred.detach().cpu().numpy()
 
 
-class LGN_SEQ(LGN):
+class LGN_BCE(LGN):
     def __init__(self, args, data):
         super().__init__(args, data)
         self.sigmoid = torch.nn.Sigmoid()
-        self.xent_func = torch.nn.BCELoss()
+        self.bce = torch.nn.BCELoss()
         
-    def forward(self, users, items, labels):
+    def forward(self, users, pos_items, neg_items):
         # input is a user, a positive, a negative.
         all_users, all_items = self.compute()
-
         users_emb = all_users[users]
-        itms_emb = all_items[items]
+        pos_emb = all_items[pos_items]
+        neg_emb = all_items[neg_items]
+        all_emb = torch.cat((pos_emb, neg_emb),0)
+
         userEmb0 = self.embed_user(users)
-        itemEmb0 = self.embed_item(items)
+        posEmb0 = self.embed_item(pos_items)
+        negEmb0 = self.embed_item(neg_items)
 
-        scores = torch.sum(torch.mul(users_emb, itms_emb), dim=1)  # users, pos_items, neg_items have the same shape
-        pred = self.sigmoid(scores)
-        xent_loss = self.xent_func(pred,labels)
+        pos_label = torch.ones((len(pos_emb),))
+        neg_label = torch.zeros((len(neg_emb),))
+        all_label = torch.cat((pos_label, neg_label),0)
 
-        regularizer = 0.5 * torch.norm(userEmb0) ** 2 + 0.5 * torch.norm(itemEmb0) ** 2
+        pred = torch.sum(torch.mul(torch.cat((users_emb, users_emb),0), all_emb), dim=1)
+        pred = self.sigmoid(pred)
+        bce_loss = self.bce(pred,all_label.cuda(self.device))
+
+        regularizer = 0.5 * torch.norm(userEmb0) ** 2 + 0.5 * torch.norm(posEmb0) ** 2 + 0.5 * torch.norm(negEmb0) ** 2
         regularizer = regularizer / self.batch_size
 
         reg_loss = self.decay * regularizer
 
-        return xent_loss, reg_loss
+        return bce_loss, reg_loss
 
 
 

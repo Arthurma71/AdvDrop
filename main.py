@@ -18,7 +18,7 @@ import os
 from utils import *
 from data import Data
 from parse import parse_args
-from model import CausE, IPS, LGN, MACR, INFONCE_batch, INFONCE, SAMREG, BC_LOSS, BC_LOSS_batch, SimpleX, SimpleX_batch, INV_LGN_DUAL, CVIB, CVIB_SEQ, DR, LGN_SEQ, IPS_SEQ
+from model import CausE, IPS, LGN, MACR, INFONCE_batch, INFONCE, SAMREG, BC_LOSS, BC_LOSS_batch, SimpleX, SimpleX_batch, INV_LGN_DUAL, CVIB, CVIB_SEQ, DR, LGN_BCE, IPS_SEQ
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from data_new import load_data
@@ -383,8 +383,8 @@ if __name__ == '__main__':
         model = CVIB_SEQ(args, data)
     if args.modeltype == 'DR':
         model = DR(args, data)
-    if args.modeltype == 'LGN_SEQ':
-        model = LGN_SEQ(args, data)
+    if args.modeltype == 'LGN_BCE':
+        model = LGN_BCE(args, data)
     if args.modeltype == 'IPS_SEQ':
         model = IPS_SEQ(args, data)
 
@@ -544,10 +544,6 @@ if __name__ == '__main__':
                 inv_prop = one_over_zl[batch_i*args.batch_size:(batch_i+1)*args.batch_size]
                 bce_loss, reg_loss = model(users, items, labels, inv_prop.cuda(device))
                 loss = bce_loss + reg_loss
-            elif args.modeltype == "LGN_SEQ":
-                bce_loss, reg_loss = model(users,items,labels)
-                loss = bce_loss + reg_loss
-
             else:
                 mf_loss, reg_loss = model(users, pos_items, neg_items)
                 loss = mf_loss + reg_loss
