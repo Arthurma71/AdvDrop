@@ -147,9 +147,10 @@ class UniEvaluator(CPPEvaluator):
                 for idx, user in enumerate(batch_users):
                     unobserved_items = [ x for x in range(ranking_score.shape[1]) if not x in candidate_items[idx]]
                     ranking_score[idx][unobserved_items] = -np.inf
-                    train_items = self.user_pos_dump[user]
-                    train_items = [ x for x in train_items if not x in self.user_pos_test[user] ]
-                    ranking_score[idx][train_items] = -np.inf
+                    if user in self.user_pos_dump:
+                        train_items = self.user_pos_dump[user]
+                        train_items = [ x for x in train_items if not x in self.user_pos_test[user] ]
+                        ranking_score[idx][train_items] = -np.inf
                     if self.pop_mask!=None:
                         for pp in self.pop_mask:
                             ranking_score[idx][pp] = 1e9+pp
