@@ -327,35 +327,35 @@ if __name__ == '__main__':
     np.save("pop_user",p_user)
     np.save("pop_item",p_item)
     
-    pop_sorted=np.sort(p_item)
-    n_groups=3
-    grp_view=[]
-    for grp in range(n_groups):
-        split=int((data.n_items-1)*(grp+1)/n_groups)
-        grp_view.append(pop_sorted[split])
-    print("group_view:",grp_view)
-    idx=np.searchsorted(grp_view,p_item)
+    # pop_sorted=np.sort(p_item)
+    # n_groups=3
+    # grp_view=[]
+    # for grp in range(n_groups):
+    #     split=int((data.n_items-1)*(grp+1)/n_groups)
+    #     grp_view.append(pop_sorted[split])
+    # print("group_view:",grp_view)
+    # idx=np.searchsorted(grp_view,p_item)
 
-    eval_test_ood_split=split_grp_view(grp_view,data.test_ood_user_list,idx)
-    eval_test_id_split=split_grp_view(grp_view,data.test_id_user_list,idx)
+    # eval_test_ood_split=split_grp_view(grp_view,data.test_ood_user_list,idx)
+    # eval_test_id_split=split_grp_view(grp_view,data.test_id_user_list,idx)
 
-    grp_view=[0]+grp_view
+    # grp_view=[0]+grp_view
 
-    pop_dict={}
-    for user,items in data.train_user_list.items():
-        for item in items:
-            if item not in pop_dict:
-                pop_dict[item]=0
-            pop_dict[item]+=1
+    # pop_dict={}
+    # for user,items in data.train_user_list.items():
+    #     for item in items:
+    #         if item not in pop_dict:
+    #             pop_dict[item]=0
+    #         pop_dict[item]+=1
     
-    sort_pop=sorted(pop_dict.items(), key=lambda item: item[1],reverse=True)
-    pop_mask=[item[0] for item in sort_pop[:20]]
-    print(pop_mask)
+    # sort_pop=sorted(pop_dict.items(), key=lambda item: item[1],reverse=True)
+    # pop_mask=[item[0] for item in sort_pop[:20]]
+    # print(pop_mask)
 
     if not args.pop_test:
         eval_test_ood = ProxyEvaluator(data,data.train_user_list,data.test_ood_user_list,top_k=[3],dump_dict=merge_user_list([data.train_user_list,data.valid_user_list,data.test_id_user_list]),user_neg_test=data.test_neg_user_list)
         eval_test_id = ProxyEvaluator(data,data.train_user_list,data.test_id_user_list,top_k=[5],dump_dict=merge_user_list([data.train_user_list,data.valid_user_list,data.test_ood_user_list]),user_neg_test=data.test_neg_user_list)
-        eval_valid = ProxyEvaluator(data,data.train_user_list,data.valid_user_list,top_k=[5])
+        eval_valid = ProxyEvaluator(data,data.train_user_list,data.valid_user_list,top_k=[5],user_neg_test=data.test_neg_user_list)
         if 'coat' in args.dataset or 'yahoo' in args.dataset:
             eval_valid=ProxyEvaluator(data,data.train_user_list,data.test_id_user_list,top_k=[5],dump_dict=merge_user_list([data.train_user_list,data.valid_user_list,data.test_ood_user_list]),user_neg_test=data.test_neg_user_list)
     else:

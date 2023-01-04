@@ -175,6 +175,13 @@ class Data:
 
         pop_user = {key: len(value) for key, value in self.train_user_list.items()}
         pop_item = {key: len(value) for key, value in self.train_item_list.items()}
+        for user in range(0, self.n_users):
+            if user not in pop_user.keys():
+                pop_user[user] = 1
+        for item in range(0, self.n_items):
+            if item not in pop_item.keys():
+                pop_item[item] = 1
+        
         self.pop_item = pop_item
         sorted_pop_user = list(set(list(pop_user.values())))
         sorted_pop_item = list(set(list(pop_item.values())))
