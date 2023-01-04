@@ -9,7 +9,16 @@ from module.mask_model import *
 from module.inv_loss import *
 from torch_geometric.nn.conv import LGConv
 from torch_sparse import SparseTensor, matmul
+from torch_scatter import scatter
 from torch.nn import ModuleList
+
+def gini_index(p, device):
+    n = p.shape[0]
+    p, indices = torch.sort(p)
+    k = (n+1) - torch.arange(1,n+1).to(device)
+    numerator = torch.sum(k*p)*2
+    denomitor = n * torch.sum(p)
+    return (n+1)/n - (numerator/denomitor)
 
 class MF(nn.Module):
     def __init__(self, args, data):
@@ -138,23 +147,29 @@ class IPS(LGN):
         return mf_loss, reg_loss
 
 
-class IPS_SEQ(IPS):
+class IPS_BCE(IPS):
     def __init__(self, args, data):
         super().__init__(args, data)
         self.data = data 
         self.sigmoid = torch.nn.Sigmoid()
-        self.xent_func = torch.nn.BCELoss(reduction='none')
-    def forward(self, users, items, labels, weights):
+        self.bce = torch.nn.BCELoss(reduction='none')
+    def forward(users, pos_items, neg_items, pos_weights):
         all_users, all_items = self.compute()
 
         users_emb = all_users[users]
-        itms_emb = all_items[items]
+        pos_emb = all_items[pos_items]
+        neg_emb = all_items[neg_items]
         userEmb0 = self.embed_user(users)
-        itemEmb0 = self.embed_item(items)
+        posEmb0 = self.embed_item(pos_items)
+        negEmb0 = self.embed_item(neg_items)
 
-        scores = torch.sum(torch.mul(users_emb, itms_emb), dim=1)  # users, pos_items, neg_items have the same shape
-        pred = self.sigmoid(scores)
-        xent_loss = self.xent_func(pred,labels)
+        pos_label = torch.ones((len(pos_emb),))
+        neg_label = torch.zeros((len(neg_emb),))
+        all_label = torch.cat((pos_label, neg_label),0)
+
+        pred = torch.sum(torch.mul(torch.cat((users_emb, users_emb),0), all_emb), dim=1)
+        pred = self.sigmoid(pred)
+        bce_loss = self.bce(pred,all_label.cuda(self.device))
 
         regularizer = 0.5 * torch.norm(userEmb0) ** 2 + 0.5 * torch.norm(itemEmb0) ** 2 
         regularizer = regularizer / self.batch_size
@@ -162,25 +177,6 @@ class IPS_SEQ(IPS):
         reg_loss = self.decay * regularizer
 
         return mf_loss, reg_loss
-
-    def _compute_IPS(self,user_index, item_index, y,y_ips=None):
-        if y_ips is None:
-            one_over_zl = np.ones(len(y))
-        else:
-            py1 = y_ips.sum() / len(y_ips)
-            py0 = 1 - py1
-            po1 = len(user_index) / (max(user_index) * max(item_index))
-            py1o1 = sum(y) / len(y)
-            py0o1 = 1 - py1o1
-
-            propensity = np.zeros(len(y))
-
-            propensity[y == 0] = (py0o1 * po1) / py0
-            propensity[y == 1] = (py1o1 * po1) / py1
-            one_over_zl = 1 / (propensity + 1e-6)
-
-        one_over_zl = torch.Tensor(one_over_zl)
-        return one_over_zl
     
 
 
@@ -816,7 +812,19 @@ class INV_LGN_DUAL(MF):
         self.is_train=True
         self.writer = writer
         self.global_step=0
+        if 'ml' in args.dataset:
+            self.user_tags = data.get_user_tags()
     
+    def compute_mask_gini(self, mask, index):
+        # get edge_user_index 
+        edge_user_index = torch.where(self.edge_index[0,:] < self.n_users, self.edge_index[0,:], self.edge_index[1,:])
+        edge_item_index = torch.where(self.edge_index[0,:] < self.n_users, self.edge_index[1,:]-self.n_users, self.edge_index[0,:]-self.n_users)
+        edge_attribute_user = self.user_tags[index][edge_user_index].to(torch.int64).to(self.device)
+        # print(edge_attribute_user.shape,  mask.shape)
+        kk = scatter(mask, edge_attribute_user, dim=0, reduce="mean")
+        return gini_index(kk, self.device), kk
+        
+        
     def step(self):
         self.global_step+=1
 
@@ -881,7 +889,7 @@ class INV_LGN_DUAL(MF):
         return regularizer
     
 
-    def forward(self, users, pos_items, neg_items):
+    def forward(self, users, pos_items, neg_items, is_draw=False):
 
         mf_loss=0
         reg_loss=0
@@ -892,8 +900,14 @@ class INV_LGN_DUAL(MF):
         for dual_ind in [True,False]:
             all_users, all_items =  self.compute(dual = dual_ind, dropout=True)
             if dual_ind and self.args.dropout_type == 1:
-                mask = self.get_mask(dual_ind)
-                self.writer.add_histogram('Dropout Mask', mask, self.global_step)
+                if is_draw:
+                    mask = self.get_mask(dual_ind)
+                    self.writer.add_histogram('Dropout Mask', mask, self.global_step)
+                    for a_index in range(3):
+                        gini_value, kk  = self.compute_mask_gini(mask, a_index)
+                        self.writer.add_scalar(f'User Attribute {a_index}', gini_value, self.global_step)
+                        self.writer.add_histogram(f'User Attribute Distribution {a_index}', kk, self.global_step)
+
             user_embeds.append(all_users)
             item_embeds.append(all_items)
 

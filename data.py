@@ -87,6 +87,9 @@ class Data:
         self.num_workers = args.num_workers
         self.dataset=args.dataset
         self.use_neg_test= args.neg_test
+        if "ml" in args.dataset:
+            self.user_tags = None
+            self.user_tags_path = self.path + 'user_meta.npy'
         
 
         # Number of total users and items
@@ -120,6 +123,10 @@ class Data:
         #Dataloader 
         self.train_data = None
         self.train_loader = None
+
+    def get_user_tags(self):
+        self.user_tags = torch.from_numpy(np.load(self.user_tags_path))
+        return self.user_tags
 
     def load_data(self):
         self.train_user_list, train_item, self.train_item_list, self.trainUser, self.trainItem = helper_load_train(

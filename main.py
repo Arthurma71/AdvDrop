@@ -18,7 +18,7 @@ import os
 from utils import *
 from data import Data
 from parse import parse_args
-from model import CausE, IPS, LGN, MACR, INFONCE_batch, INFONCE, SAMREG, BC_LOSS, BC_LOSS_batch, SimpleX, SimpleX_batch, INV_LGN_DUAL, CVIB, CVIB_SEQ, DR, LGN_BCE, IPS_SEQ, DR_SEQ
+from model import CausE, IPS, LGN, MACR, INFONCE_batch, INFONCE, SAMREG, BC_LOSS, BC_LOSS_batch, SimpleX, SimpleX_batch, INV_LGN_DUAL, CVIB, CVIB_SEQ, DR, LGN_BCE, DR_SEQ
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
@@ -353,9 +353,9 @@ if __name__ == '__main__':
     # print(pop_mask)
 
     if not args.pop_test:
-        eval_test_ood = ProxyEvaluator(data,data.train_user_list,data.test_ood_user_list,top_k=[3],dump_dict=merge_user_list([data.train_user_list,data.valid_user_list,data.test_id_user_list]),user_neg_test=data.test_neg_user_list)
-        eval_test_id = ProxyEvaluator(data,data.train_user_list,data.test_id_user_list,top_k=[5],dump_dict=merge_user_list([data.train_user_list,data.valid_user_list,data.test_ood_user_list]),user_neg_test=data.test_neg_user_list)
-        eval_valid = ProxyEvaluator(data,data.train_user_list,data.valid_user_list,top_k=[5],user_neg_test=data.test_neg_user_list)
+        eval_test_ood = ProxyEvaluator(data,data.train_user_list,data.test_ood_user_list,top_k=[20],dump_dict=merge_user_list([data.train_user_list,data.valid_user_list,data.test_id_user_list]),user_neg_test=data.test_neg_user_list)
+        eval_test_id = ProxyEvaluator(data,data.train_user_list,data.test_id_user_list,top_k=[30],dump_dict=merge_user_list([data.train_user_list,data.valid_user_list,data.test_ood_user_list]),user_neg_test=data.test_neg_user_list)
+        eval_valid = ProxyEvaluator(data,data.train_user_list,data.valid_user_list,top_k=[20],user_neg_test=data.test_neg_user_list)
         if 'coat' in args.dataset or 'yahoo' in args.dataset:
             eval_valid=ProxyEvaluator(data,data.train_user_list,data.test_id_user_list,top_k=[5],dump_dict=merge_user_list([data.train_user_list,data.valid_user_list,data.test_ood_user_list]),user_neg_test=data.test_neg_user_list)
     else:
