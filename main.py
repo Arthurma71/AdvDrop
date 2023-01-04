@@ -23,7 +23,7 @@ from torch.utils.data import Dataset, DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from data_new import load_data
 
-def compute_IPS(user_index, pos_item_index, neg_item_index, y_ips=None):
+def compute_IPS(user_index, pos_item_index, neg_item_index, device,y_ips=None):
     item_index = torch.cat((pos_item_index, neg_item_index),0)
     pos_label = torch.ones((len(pos_item_index),))
     neg_label = torch.zeros((len(neg_item_index),))
@@ -33,12 +33,16 @@ def compute_IPS(user_index, pos_item_index, neg_item_index, y_ips=None):
         one_over_zl = torch.ones(len(y))
     else:
         py1 = y_ips.sum() / len(y_ips)
+        #print("py1:",py1.device)
         py0 = 1 - py1
+        #print("py0:",py0.device)
         po1 = len(user_index) / (max(user_index) * max(item_index))
         py1o1 = sum(y) / len(y)
+        #print("py1o1:",py1o1.device)
         py0o1 = 1 - py1o1
+        #print("py0o1:",py0o1.device)
 
-        propensity = torch.zeros(len(y))
+        propensity = torch.zeros(len(y)).cuda(device)
 
         propensity[y == 0] = (py0o1 * po1) / py0
         propensity[y == 1] = (py1o1 * po1) / py1
@@ -489,7 +493,7 @@ if __name__ == '__main__':
                         neg_items_pop = batch[6]
                 if 'DR' in args.modeltype:
                     prior_y = batch[7]
-                    one_over_zl = compute_IPS(users, pos_items,neg_items, model.data.train_data.y_ips)
+                    one_over_zl = compute_IPS(users, pos_items, neg_items, device, torch.FloatTensor(model.data.train_data.y_ips).cuda(device))
 
 
             model.train()
