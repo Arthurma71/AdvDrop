@@ -128,10 +128,12 @@ class Data:
         self.test_ood_user_list, self.test_ood_item_list = helper_load(self.test_ood_file)
         self.test_id_user_list, self.test_id_item_list = helper_load(self.test_id_file)
 
-        if 'coat' in self.dataset or 'yahoo' in self.dataset:
-            self.train_neg_user_list, train_neg_item  = helper_load(self.path + 'train_neg.txt')
+        if 'coat' in self.dataset or 'yahoo' in self.dataset or 'ml' in self.dataset:
             if self.use_neg_test:
                 self.test_neg_user_list, test_neg_item = helper_load(self.path + 'test_neg.txt')
+            if 'ml' not in self.dataset:
+                self.train_neg_user_list, train_neg_item  = helper_load(self.path + 'train_neg.txt')
+            
             #print(self.train_neg_user_list)
 
         self.pop_dict_list = []
@@ -143,6 +145,9 @@ class Data:
         if 'coat' in self.dataset or 'yahoo' in self.dataset:
             self.items=list(set(self.items).union(*[train_neg_item,test_neg_item]))
             self.users=list(set(self.users).union(set(self.train_neg_user_list.keys())))
+        if 'ml' in self.dataset:
+            self.items=list(set(self.items).union(*[test_neg_item]))
+            self.users=list(set(self.users).union(set(self.test_neg_user_list.keys())))
         self.n_users = len(self.users)
         self.n_items = len(self.items)
 
