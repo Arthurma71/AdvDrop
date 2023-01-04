@@ -21,7 +21,6 @@ from parse import parse_args
 from model import CausE, IPS, LGN, MACR, INFONCE_batch, INFONCE, SAMREG, BC_LOSS, BC_LOSS_batch, SimpleX, SimpleX_batch, INV_LGN_DUAL, CVIB, CVIB_SEQ, DR, LGN_BCE, IPS_SEQ, DR_SEQ
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.tensorboard import SummaryWriter
-from data_new import load_data
 
 def compute_IPS(user_index, pos_item_index, neg_item_index, device,y_ips=None):
     item_index = torch.cat((pos_item_index, neg_item_index),0)
@@ -287,22 +286,6 @@ if __name__ == '__main__':
     start = time.time()
     args = parse_args()
     print(str(args))
-    if "coat" in args.dataset:
-        train_mat, test_mat = load_data('coat')        
-        x_train, y_train = rating_mat_to_sample(train_mat)
-        x_test, y_test = rating_mat_to_sample(test_mat)
-        num_user = train_mat.shape[0]
-        num_item = train_mat.shape[1]
-
-    elif 'yahoo' in args.dataset:
-        x_train, y_train, x_test, y_test = load_data('yahoo')
-        num_user = x_train[:,0].max() + 1
-        num_item = x_train[:,1].max() + 1
-
-    print("# user: {}, # item: {}".format(num_user, num_item))
-    # binarize
-    y_train = binarize(y_train)
-    y_test = binarize(y_test)
 
     data = Data(args)
     data.load_data()
@@ -438,12 +421,6 @@ if __name__ == '__main__':
     flag = False
     if args.modeltype == 'INV_LGN_DUAL':
         model.freeze_args(False)
-    # if 'DR' in args.modeltype or args.modeltype == 'IPS_SEQ':
-    #     ips_idxs = np.arange(len(y_test))
-    #     np.random.shuffle(ips_idxs)
-    #     y_ips = y_test[ips_idxs[:int(0.05 * len(ips_idxs))]]
-    #     one_over_zl = model._compute_IPS(model.data.train_data.user_seq, model.data.train_data.item_seq, model.data.train_data.lab_seq, y_ips)
-    #     prior_y = y_ips.mean()
 
 
     optimizer = torch.optim.Adam([ param for param in model.parameters() if param.requires_grad == True], lr=model.lr)
