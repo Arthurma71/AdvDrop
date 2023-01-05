@@ -2,7 +2,7 @@ import random
 import re
 from sys import get_coroutine_origin_tracking_depth
 from sys import exit
-
+import matplotlib.pyplot as plt
 random.seed(101)
 import math
 # from scipy.linalg import svd
@@ -20,6 +20,7 @@ from model import INV_LGN_DUAL, LGN, INV_LGN_DUAL_BCE
 from torch.utils.data import Dataset, DataLoader
 from utils import *
 from torch.utils.tensorboard import SummaryWriter
+import networkx as nx
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
 
 
@@ -96,10 +97,10 @@ if __name__ == '__main__':
     #print(pop_mask)
 
     if not args.pop_test:
-        eval_test_ood = ProxyEvaluator(data, data.train_user_list, data.test_ood_user_list, top_k=[3],
+        eval_test_ood = ProxyEvaluator(data, data.train_user_list, data.test_ood_user_list, top_k=[20],
                                        dump_dict=merge_user_list(
                                            [data.train_user_list, data.valid_user_list, data.test_id_user_list]),user_neg_test=data.test_neg_user_list)
-        eval_test_id = ProxyEvaluator(data, data.train_user_list, data.test_id_user_list, top_k=[5],
+        eval_test_id = ProxyEvaluator(data, data.train_user_list, data.test_id_user_list, top_k=[30],
                                       dump_dict=merge_user_list(
                                           [data.train_user_list, data.valid_user_list, data.test_ood_user_list]),user_neg_test=data.test_neg_user_list)
         eval_valid = ProxyEvaluator(data, data.train_user_list, data.valid_user_list, top_k=[20])
@@ -230,6 +231,25 @@ if __name__ == '__main__':
             
                 with open(base_path + 'stats_{}.txt'.format(args.saveID), 'a') as f:
                     f.write(perf_str + "\n")
+            if args.draw_graph:
+                mask = model.get_mask(True).detach().cpu().numpy()
+                G, edge_labels = model.draw_graph_init(mask)
+                G, labels = model.add_node_tag(G, user_index=0, item_index=0)
+                pos = nx.nx_agraph.graphviz_layout(G, prog="neato")
+                nx.draw_networkx_nodes(G, pos, node_size=20,node_shape = 'd', nodelist = list(np.arange(model.n_users)),  node_color= list(labels.values())[:model.n_users], cmap=plt.cm.Reds)
+                nx.draw_networkx_nodes(G, pos, node_size=20, nodelist = list(np.arange(model.n_users,model.n_users+ model.n_items)), node_color= list(labels.values())[model.n_users:], cmap=plt.cm.Reds)
+                nx.draw_networkx_edges(G,pos,edge_color=list(mask),width=4,
+                                edge_cmap=plt.cm.Blues)
+                # nx.draw_networkx_labels(G, pos, font_size=10, font_family="sans-serif", labels = labels)
+                # nx.draw_networkx_edge_labels(G, pos, edge_labels,font_size=5)
+                ax = plt.gca()
+                ax.margins(0.08)
+                plt.axis("off")
+                # plt.tight_layout()
+                plt.savefig(f'image/u_index_{0}_i_index{0}_epoch_{epoch}.png')
+                plt.close() 
+
+
 
             #model = restore_checkpoint_adv(model, base_path, device)
 

@@ -122,12 +122,16 @@ def parse_args():
                         help='0: not remove. 1: remove')
     parser.add_argument('--adv_lr',type=float,default=1e-2, help='lr for adv')
 
+    parser.add_argument('--draw_graph',type=bool,default=False, help='draw graph or not')
+
 
     # CVIB 
     parser.add_argument('--cvib_alpha', type=float, default=0.1,
                         help='alpha for CVIB')
     parser.add_argument('--cvib_gamma', type=float, default=0.01,
                         help='gamma for CVIB')
+
+
 
 
     

@@ -11,6 +11,7 @@ from torch_geometric.nn.conv import LGConv
 from torch_sparse import SparseTensor, matmul
 from torch_scatter import scatter
 from torch.nn import ModuleList
+import networkx as nx
 
 def gini_index(p, device):
     n = p.shape[0]
@@ -831,7 +832,28 @@ class INV_LGN_DUAL(MF):
         kk = scatter(mask, edge_attribute, dim=0, reduce="mean")
         return gini_index(kk, self.device), kk
         
-        
+    def draw_graph_init(self, mask):
+        G = nx.DiGraph()
+        edges = self.edge_index.cpu().numpy().T
+        for i in range(len(edges)):
+            e = edges[i]
+            G.add_edge(e[0], e[1], weight=mask[i])
+        edge_labels = nx.get_edge_attributes(G, "weight")
+        return G, edge_labels
+
+    def add_node_tag(self, G, user_index, item_index):
+        node_attribute_user = self.user_tags[user_index]
+        node_attribute_item = self.item_tags[item_index]
+        node_attribute_all = torch.cat((node_attribute_user, node_attribute_item),0).numpy()
+        for i in range(self.n_users + self.n_items):
+            if i< self.n_users:
+                G.add_node(i, feature= node_attribute_all[i], node_shape='d')
+            else:
+                G.add_node(i, feature= node_attribute_all[i])
+    
+        labels = nx.get_node_attributes(G, 'feature')
+        return G, labels
+
     def step(self):
         self.global_step+=1
 
