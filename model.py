@@ -816,6 +816,11 @@ class INV_LGN_DUAL(MF):
         self.item_tags=[]
         if 'ml' in args.dataset:
             self.user_tags = data.get_user_tags()
+        
+        if 'coat' in args.dataset:
+            self.user_tags = data.get_user_tags()
+            self.item_tags = data.get_item_tags()
+            
     
     def compute_mask_gini(self, mask, index, view='user'):
         # get edge_user_index 
@@ -907,12 +912,16 @@ class INV_LGN_DUAL(MF):
                     self.writer.add_histogram('Dropout Mask', mask, self.global_step)
                     for a_index in range(len(self.user_tags)):
                         gini_value, kk  = self.compute_mask_gini(mask, a_index,'user')
+                        
                         self.writer.add_scalar(f'Attribute_Gini/User Attribute {a_index}', gini_value, self.global_step)
-                        self.writer.add_scalars(f'Attribute_Means/User Attribute Distribution {a_index}', {f"group {i}":kk[i] for i in range(len(kk))}, self.global_step)
+                        self.writer.add_histogram(f'Attribute_Distribution/User Attribute {a_index}',kk, self.global_step)
+                        #self.writer.add_scalars(f'Attribute_Means/User Attribute Distribution {a_index}', {f"group {i}":kk[i] for i in range(len(kk))}, self.global_step)
                     for a_index in range(len(self.item_tags)):
+                        #print(self.item_tags[a_index].shape)
                         gini_value, kk  = self.compute_mask_gini(mask, a_index, 'item')
                         self.writer.add_scalar(f'Attribute_Gini/Item Attribute {a_index}', gini_value, self.global_step)
-                        self.writer.add_scalars(f'Attribute_Means/Item Attribute Distribution {a_index}', {f"group {i}":kk[i] for i in range(len(kk))}, self.global_step)
+                        self.writer.add_histogram(f'Attribute_Distribution/Item Attribute {a_index}',kk, self.global_step)
+                        #self.writer.add_scalars(f'Attribute_Means/Item Attribute Distribution {a_index}', {f"group {i}":kk[i] for i in range(len(kk))}, self.global_step)
 
             user_embeds.append(all_users)
             item_embeds.append(all_items)
