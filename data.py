@@ -125,7 +125,7 @@ class Data:
         self.train_loader = None
 
     def get_user_tags(self):
-        self.user_tags = torch.from_numpy(np.load(self.user_tags_path))
+        self.user_tags = [torch.from_numpy(np.load(self.user_tags_path)[0,:]),torch.from_numpy(np.load(self.user_tags_path)[1,:]),torch.from_numpy(np.load(self.user_tags_path)[2,:])]
         return self.user_tags
 
     def load_data(self):

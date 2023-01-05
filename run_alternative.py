@@ -66,10 +66,21 @@ if __name__ == '__main__':
         split = int((data.n_items - 1) * (grp + 1) / n_groups)
         grp_view.append(pop_sorted[split])
     print("group_view:", grp_view)
-    idx = np.searchsorted(grp_view, p_item)
+    item_pop_grp_idx = np.searchsorted(grp_view, p_item)
 
-    eval_test_ood_split = split_grp_view(grp_view, data.test_ood_user_list, idx)
-    eval_test_id_split = split_grp_view(grp_view, data.test_id_user_list, idx)
+    
+
+    pop_sorted = np.sort(p_user)
+    grp_view = []
+    for grp in range(n_groups):
+        split = int((data.n_users - 1) * (grp + 1) / n_groups)
+        grp_view.append(pop_sorted[split])
+    print("group_view:", grp_view)
+    user_pop_grp_idx = np.searchsorted(grp_view, p_user)
+    
+
+    # eval_test_ood_split = split_grp_view(grp_view, data.test_ood_user_list, idx)
+    # eval_test_id_split = split_grp_view(grp_view, data.test_id_user_list, idx)
 
     grp_view = [0] + grp_view
 
@@ -82,7 +93,7 @@ if __name__ == '__main__':
 
     sort_pop = sorted(pop_dict.items(), key=lambda item: item[1], reverse=True)
     pop_mask = [item[0] for item in sort_pop[:20]]
-    print(pop_mask)
+    #print(pop_mask)
 
     if not args.pop_test:
         eval_test_ood = ProxyEvaluator(data, data.train_user_list, data.test_ood_user_list, top_k=[3],
@@ -117,6 +128,9 @@ if __name__ == '__main__':
 
     model, start_epoch = restore_checkpoint(model, base_path, device)
 
+    model.item_tags.append(torch.from_numpy(item_pop_grp_idx))
+    model.user_tags.append(torch.from_numpy(user_pop_grp_idx))
+
     if args.test_only:
 
         for i, evaluator in enumerate(evaluators):
@@ -150,7 +164,7 @@ if __name__ == '__main__':
             cur_adv_patience=0
 
             epoch_adv = 0 
-            model.M.reset_parameters()
+            #model.M.reset_parameters()
             #while cur_adv_patience < args.adv_patience:
             for epoch_adv in range(args.adv_epochs):
 

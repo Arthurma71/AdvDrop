@@ -812,16 +812,18 @@ class INV_LGN_DUAL(MF):
         self.is_train=True
         self.writer = writer
         self.global_step=0
+        self.user_tags=[]
+        self.item_tags=[]
         if 'ml' in args.dataset:
             self.user_tags = data.get_user_tags()
     
-    def compute_mask_gini(self, mask, index):
+    def compute_mask_gini(self, mask, index, view='user'):
         # get edge_user_index 
         edge_user_index = torch.where(self.edge_index[0,:] < self.n_users, self.edge_index[0,:], self.edge_index[1,:])
         edge_item_index = torch.where(self.edge_index[0,:] < self.n_users, self.edge_index[1,:]-self.n_users, self.edge_index[0,:]-self.n_users)
-        edge_attribute_user = self.user_tags[index][edge_user_index].to(torch.int64).to(self.device)
+        edge_attribute = self.user_tags[index][edge_user_index].to(torch.int64).to(self.device) if view=='user' else self.item_tags[index][edge_item_index].to(torch.int64).to(self.device)
         # print(edge_attribute_user.shape,  mask.shape)
-        kk = scatter(mask, edge_attribute_user, dim=0, reduce="mean")
+        kk = scatter(mask, edge_attribute, dim=0, reduce="mean")
         return gini_index(kk, self.device), kk
         
         
@@ -903,10 +905,14 @@ class INV_LGN_DUAL(MF):
                 if is_draw:
                     mask = self.get_mask(dual_ind)
                     self.writer.add_histogram('Dropout Mask', mask, self.global_step)
-                    for a_index in range(3):
-                        gini_value, kk  = self.compute_mask_gini(mask, a_index)
-                        self.writer.add_scalar(f'User Attribute {a_index}', gini_value, self.global_step)
-                        self.writer.add_histogram(f'User Attribute Distribution {a_index}', kk, self.global_step)
+                    for a_index in range(len(self.user_tags)):
+                        gini_value, kk  = self.compute_mask_gini(mask, a_index,'user')
+                        self.writer.add_scalar(f'Attribute_Gini/User Attribute {a_index}', gini_value, self.global_step)
+                        self.writer.add_scalars(f'Attribute_Means/User Attribute Distribution {a_index}', {f"group {i}":kk[i] for i in range(len(kk))}, self.global_step)
+                    for a_index in range(len(self.item_tags)):
+                        gini_value, kk  = self.compute_mask_gini(mask, a_index, 'item')
+                        self.writer.add_scalar(f'Attribute_Gini/Item Attribute {a_index}', gini_value, self.global_step)
+                        self.writer.add_scalars(f'Attribute_Means/Item Attribute Distribution {a_index}', {f"group {i}":kk[i] for i in range(len(kk))}, self.global_step)
 
             user_embeds.append(all_users)
             item_embeds.append(all_items)
