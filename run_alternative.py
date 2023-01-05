@@ -150,6 +150,7 @@ if __name__ == '__main__':
             cur_adv_patience=0
 
             epoch_adv = 0 
+            model.M.reset_parameters()
             #while cur_adv_patience < args.adv_patience:
             for epoch_adv in range(args.adv_epochs):
 
@@ -184,7 +185,7 @@ if __name__ == '__main__':
                     if 'SEQ' in args.modeltype:
                         _, _, inv_loss = model(users, items, labels)
                     else:
-                        _, _, inv_loss = model(users, pos_items, neg_items)
+                        _, _, inv_loss = model(users, pos_items, neg_items, is_draw=True)
 
 
                     # loss = -inv_loss
