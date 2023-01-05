@@ -87,10 +87,10 @@ class Data:
         self.num_workers = args.num_workers
         self.dataset=args.dataset
         self.use_neg_test= args.neg_test
-        if "ml" in args.dataset:
+        if "ml" in args.dataset or "coat" in args.dataset:
             self.user_tags = None
             self.user_tags_path = self.path + 'user_meta.npy'
-        
+            self.item_tags_path = self.path + 'item_meta.npy'
 
         # Number of total users and items
         self.n_users, self.n_items, self.n_observations = 0, 0, 0
@@ -125,8 +125,14 @@ class Data:
         self.train_loader = None
 
     def get_user_tags(self):
-        self.user_tags = [torch.from_numpy(np.load(self.user_tags_path)[0,:]),torch.from_numpy(np.load(self.user_tags_path)[1,:]),torch.from_numpy(np.load(self.user_tags_path)[2,:])]
+        tag=np.load(self.user_tags_path)
+        self.user_tags = [torch.from_numpy(tag[i,:]) for i in range(len(tag))]
         return self.user_tags
+    
+    def get_item_tags(self):
+        tag=np.load(self.item_tags_path)
+        self.item_tags = [torch.from_numpy(tag[i,:]) for i in range(len(tag))]
+        return self.item_tags
 
     def load_data(self):
         self.train_user_list, train_item, self.train_item_list, self.trainUser, self.trainItem = helper_load_train(
