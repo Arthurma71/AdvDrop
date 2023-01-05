@@ -210,6 +210,10 @@ class Mask_Model_Attention(MessagePassing):
         #alpha = alpha*norm*self.args.keep_prob
         #return torch.clamp(alpha, min=0, max=1) 
         return torch.sigmoid(alpha) 
+    def reset_parameters(self):
+        self.Q.reset_parameters()
+        self.K.reset_parameters()
+
 
 
 class GCN(MessagePassing):
