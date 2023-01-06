@@ -45,10 +45,12 @@ if __name__ == '__main__':
     saveID += "n_layers=" + str(args.n_layers)
     base_path = './weights/{}/{}/{}'.format(args.dataset, args.modeltype, saveID)
     run_path = './runs/{}/{}/{}'.format(args.dataset, args.modeltype, saveID)
+    image_path = './image/{}/{}/{}'.format(args.dataset, args.modeltype, saveID)
 
     checkpoint_buffer = []
     ensureDir(base_path)
     ensureDir(run_path)
+    ensureDir(image_path)
 
     writer = SummaryWriter(log_dir=run_path)
 
@@ -97,13 +99,13 @@ if __name__ == '__main__':
     #print(pop_mask)
 
     if not args.pop_test:
-        eval_test_ood = ProxyEvaluator(data, data.train_user_list, data.test_ood_user_list, top_k=[20],
+        eval_test_ood = ProxyEvaluator(data, data.train_user_list, data.test_ood_user_list, top_k=[3],
                                        dump_dict=merge_user_list(
                                            [data.train_user_list, data.valid_user_list, data.test_id_user_list]),user_neg_test=data.test_neg_user_list)
-        eval_test_id = ProxyEvaluator(data, data.train_user_list, data.test_id_user_list, top_k=[30],
+        eval_test_id = ProxyEvaluator(data, data.train_user_list, data.test_id_user_list, top_k=[5],
                                       dump_dict=merge_user_list(
                                           [data.train_user_list, data.valid_user_list, data.test_ood_user_list]),user_neg_test=data.test_neg_user_list)
-        eval_valid = ProxyEvaluator(data, data.train_user_list, data.valid_user_list, top_k=[20])
+        eval_valid = ProxyEvaluator(data, data.train_user_list, data.valid_user_list, top_k=[3])
     else:
         eval_test_ood = ProxyEvaluator(data, data.train_user_list, data.test_ood_user_list, top_k=[20],
                                        dump_dict=merge_user_list(
@@ -233,21 +235,40 @@ if __name__ == '__main__':
                     f.write(perf_str + "\n")
             if args.draw_graph:
                 mask = model.get_mask(True).detach().cpu().numpy()
-                G, edge_labels = model.draw_graph_init(mask)
-                G, labels = model.add_node_tag(G, user_index=0, item_index=0)
-                pos = nx.nx_agraph.graphviz_layout(G, prog="neato")
-                nx.draw_networkx_nodes(G, pos, node_size=20,node_shape = 'd', nodelist = list(np.arange(model.n_users)),  node_color= list(labels.values())[:model.n_users], cmap=plt.cm.Reds)
-                nx.draw_networkx_nodes(G, pos, node_size=20, nodelist = list(np.arange(model.n_users,model.n_users+ model.n_items)), node_color= list(labels.values())[model.n_users:], cmap=plt.cm.Reds)
-                nx.draw_networkx_edges(G,pos,edge_color=list(mask),width=4,
-                                edge_cmap=plt.cm.Blues)
-                # nx.draw_networkx_labels(G, pos, font_size=10, font_family="sans-serif", labels = labels)
-                # nx.draw_networkx_edge_labels(G, pos, edge_labels,font_size=5)
-                ax = plt.gca()
-                ax.margins(0.08)
-                plt.axis("off")
-                # plt.tight_layout()
-                plt.savefig(f'image/u_index_{0}_i_index{0}_epoch_{epoch}.png')
-                plt.close() 
+                for u_idx in range(5):
+                    for i_idx in range(5):
+                        for start in ['user','item']:
+                            G, edge_labels,new_mask = model.draw_graph_init(mask,start)
+                            G, labels = model.add_node_tag(G, user_index=u_idx, item_index=i_idx)
+                            #pos = nx.nx_agraph.graphviz_layout(G, prog="neato")
+
+
+                            user_val=list(model.user_tags[u_idx])#[0,1,1,0] ==> [0,2,3,1]
+                            item_val=list(model.item_tags[i_idx])
+
+                            pos_user=np.argsort(np.argsort(np.array(user_val)))#[0,3,1,2] [0,1,2,3] 
+                            pos_item=np.argsort(np.argsort(np.array(item_val)))
+
+                            pos = {}
+                            pos.update((i, (1, 3*pos_user[i])) for i in range(model.n_users))
+                            pos.update((i+model.n_users, (150, 3*pos_item[i])) for i in range(model.n_items))
+                            #print(pos_user)
+                            #print(['r' if val==0 else 'b' for val in user_val])#[]
+
+                            nx.draw_networkx_nodes(G, pos, node_size=3, node_shape = 'd', nodelist = list(np.arange(model.n_users)),  node_color= user_val,cmap=plt.cm.bwr)
+                            nx.draw_networkx_nodes(G, pos, node_size=3, node_shape = 'o', nodelist = list(np.arange(model.n_users,model.n_users+ model.n_items)), node_color=item_val, cmap=plt.cm.bwr)
+                            nx.draw_networkx_edges(G,pos,edge_color=new_mask,width=0.5,
+                                            edge_cmap=plt.cm.bwr)
+
+                    
+                            # nx.draw_networkx_labels(G, pos, font_size=10, font_family="sans-serif", labels = labels)
+                            # nx.draw_networkx_edge_labels(G, pos, edge_labels,font_size=5)
+                            ax = plt.gca()
+                            ax.margins(0.08)
+                            plt.axis("off")
+                            # plt.tight_layout()
+                            plt.savefig(image_path+f'/u_index_{u_idx}_i_index{i_idx}_epoch_{epoch}_{start}.png')
+                            plt.close() 
 
 
 

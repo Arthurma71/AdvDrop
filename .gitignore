@@ -6,4 +6,6 @@
 *.npz
 *.tar
 *.so
+*.ascii
+*.png
 runs/*

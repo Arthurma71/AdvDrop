@@ -832,14 +832,22 @@ class INV_LGN_DUAL(MF):
         kk = scatter(mask, edge_attribute, dim=0, reduce="mean")
         return gini_index(kk, self.device), kk
         
-    def draw_graph_init(self, mask):
+    def draw_graph_init(self, mask, start='user'):
         G = nx.DiGraph()
         edges = self.edge_index.cpu().numpy().T
+        new_mask=[]
         for i in range(len(edges)):
             e = edges[i]
-            G.add_edge(e[0], e[1], weight=mask[i])
+            if start=='user':
+                if e[0]<self.n_users:
+                    G.add_edge(e[0], e[1], weight=mask[i])
+                    new_mask.append(mask[i])
+            else:
+                if e[0]>=self.n_users:
+                    G.add_edge(e[0], e[1], weight=mask[i])
+                    new_mask.append(mask[i])
         edge_labels = nx.get_edge_attributes(G, "weight")
-        return G, edge_labels
+        return G, edge_labels,new_mask
 
     def add_node_tag(self, G, user_index, item_index):
         node_attribute_user = self.user_tags[user_index]
@@ -847,7 +855,7 @@ class INV_LGN_DUAL(MF):
         node_attribute_all = torch.cat((node_attribute_user, node_attribute_item),0).numpy()
         for i in range(self.n_users + self.n_items):
             if i< self.n_users:
-                G.add_node(i, feature= node_attribute_all[i], node_shape='d')
+                G.add_node(i, feature= node_attribute_all[i])
             else:
                 G.add_node(i, feature= node_attribute_all[i])
     
