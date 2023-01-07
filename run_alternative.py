@@ -52,6 +52,9 @@ if __name__ == '__main__':
     ensureDir(run_path)
     ensureDir(image_path)
 
+    with open(base_path +'stats_{}.txt'.format(args.saveID), 'a') as f:
+        f.write(str(args) + "\n")
+
     writer = SummaryWriter(log_dir=run_path)
 
 
@@ -152,8 +155,8 @@ if __name__ == '__main__':
 
     for epoch in range(start_epoch, args.epoch):
         # If the early stopping has been reached, restore to the best performance model
-        if flag:
-            break
+        # if flag:
+        #     break
         running_loss, running_mf_loss, running_reg_loss, running_inv_loss, num_batches = 0, 0, 0, 0, 0
         if (epoch + 1)  % args.interval == 0:
 
@@ -238,6 +241,7 @@ if __name__ == '__main__':
                 for u_idx in range(5):
                     for i_idx in range(5):
                         for start in ['user','item']:
+                            plt.rcParams['figure.figsize']=(12.8, 7.2)
                             G, edge_labels,new_mask = model.draw_graph_init(mask,start)
                             G, labels = model.add_node_tag(G, user_index=u_idx, item_index=i_idx)
                             #pos = nx.nx_agraph.graphviz_layout(G, prog="neato")

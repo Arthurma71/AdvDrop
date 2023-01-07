@@ -970,7 +970,10 @@ class INV_LGN_DUAL(MF):
             mf_loss = mf_loss + torch.negative(torch.mean(maxi))
             reg_loss = reg_loss+ self.decay * regularizer
         
-        inv_loss, losses=self.args.inv_tau*self.inv_loss(user_embeds, item_embeds)
+        #print(type(self.args.inv_tau))
+        
+        inv_loss, losses= self.inv_loss(user_embeds, item_embeds)
+        inv_loss = self.args.inv_tau*inv_loss
         #inv_loss = -self.inv_loss(item_embeds[0], item_embeds[1], user_embeds[0], user_embeds[1], users)
 
         return mf_loss, reg_loss, inv_loss

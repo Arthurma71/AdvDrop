@@ -528,7 +528,7 @@ if __name__ == '__main__':
             elif args.modeltype == "INV_LGN_DUAL":
                 if args.remove_inv == 0:
                     mf_loss, reg_loss, inv_loss = model(users,pos_items,neg_items)
-                    loss = mf_loss + reg_loss + inv_loss * args.inv_coeff
+                    loss = mf_loss + reg_loss + inv_loss 
                 else:
                     mf_loss, reg_loss, _ = model(users,pos_items,neg_items)
                     loss = mf_loss + reg_loss 
