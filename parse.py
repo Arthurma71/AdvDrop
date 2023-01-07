@@ -123,6 +123,7 @@ def parse_args():
     parser.add_argument('--adv_lr',type=float,default=1e-2, help='lr for adv')
 
     parser.add_argument('--draw_graph',type=bool,default=False, help='draw graph or not')
+    parser.add_argument('--use_attribute',type=bool,default=False, help='use attribute or not')
 
 
     # CVIB 

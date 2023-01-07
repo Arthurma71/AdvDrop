@@ -821,8 +821,49 @@ class INV_LGN_DUAL(MF):
         if 'coat' in args.dataset:
             self.user_tags = data.get_user_tags()
             self.item_tags = data.get_item_tags()
+        
+        self.user_feature_embed = []
+        self.item_feature_embed = []
+        self.generate_embedings(self.user_tags, self.user_feature_embed)
+        self.generate_embedings(self.item_tags, self.item_feature_embed)
+        self.final_embed_user_dual, self.final_embed_item_dual, self.final_embed_item = None, None, None
+        if self.args.use_attribute:
+            self.user_dense = nn.Linear(self.emb_dim* (len(self.user_tags)+1) ,self.emb_dim)
+            self.user_dense_dual = nn.Linear(self.emb_dim*(len(self.user_tags)+1),self.emb_dim)
+            self.item_dense = nn.Linear(self.emb_dim*(len(self.item_tags)+1),self.emb_dim)
+            self.item_dense_dual = nn.Linear(self.emb_dim*(len(self.item_tags)+1),self.emb_dim)
+
+
             
+    def generate_embedings(self, tags, feature_embed):
+        featuren_len = len(tags) 
+        if featuren_len > 0:
+            for i in range(featuren_len):
+                max_value = torch.max(tags[i])+1
+                embed = nn.Embedding(max_value, self.emb_dim).to(self.device)
+                nn.init.xavier_normal_(embed.weight)
+                feature_embed.append(embed)
+                # feature_embed[i] = embed
+
+    def concat_features(self):
+        user_features = []
+        for i in range(len(self.user_feature_embed)):
+            # print(len(self.user_feature_embed), len(self.user_tags))
+            # print(self.user_feature_embed[i].weight.shape)
+            user_features.append(self.user_feature_embed[i].weight[self.user_tags[i]])
+
+        item_features = []
+        for i in range(len(self.item_feature_embed)):
+            item_features.append(self.item_feature_embed[i].weight[self.item_tags[i]])
+
+        if len(user_features)>0:
+            user_features = torch.cat(user_features,1)
+        if len(item_features)>0:
+            item_features = torch.cat(item_features,1)
+
+        return user_features, item_features
     
+
     def compute_mask_gini(self, mask, index, view='user'):
         # get edge_user_index 
         edge_user_index = torch.where(self.edge_index[0,:] < self.n_users, self.edge_index[0,:], self.edge_index[1,:])
@@ -883,13 +924,23 @@ class INV_LGN_DUAL(MF):
         return g
     
     def compute(self, dual=False, dropout = False, mask = None):
+        final_embed_user, final_embed_item = None, None
+        if self.args.use_attribute:
+            combined_user_feature, combined_item_feature = self.concat_features()
+            if len(self.user_feature_embed) > 0:
+                final_embed_user = torch.cat([combined_user_feature, self.embed_user_dual.weight],1) if dual else torch.cat([combined_user_feature, self.embed_user.weight],1)
+            if len(self.item_feature_embed) > 0:
+                final_embed_item = torch.cat([combined_item_feature, self.embed_item_dual.weight],1) if dual else torch.cat([combined_item_feature, self.embed_item.weight],1)
+
         is_arm = True if mask != None else False
+
         if not dual:
-            users_emb = self.embed_user.weight
-            items_emb = self.embed_item.weight
+            users_emb = self.user_dense(final_embed_user) if final_embed_user is not None else  self.embed_user.weight
+            items_emb = self.item_dense(final_embed_item) if final_embed_item is not None else self.embed_item.weight
         else:
-            users_emb = self.embed_user_dual.weight
-            items_emb = self.embed_item_dual.weight
+            users_emb = self.user_dense_dual(final_embed_user) if final_embed_user is not None else  self.embed_user_dual.weight
+            items_emb = self.item_dense_dual(final_embed_item) if final_embed_item is not None else self.embed_item_dual.weight
+        
         all_emb = torch.cat([users_emb, items_emb])
 
         embs = [all_emb]
@@ -927,7 +978,6 @@ class INV_LGN_DUAL(MF):
     
 
     def forward(self, users, pos_items, neg_items, is_draw=False):
-
         mf_loss=0
         reg_loss=0
         user_embeds=[]
