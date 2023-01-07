@@ -116,8 +116,6 @@ def parse_args():
                         help='dropout type for embed-level infonce 0 for random 1 for attention')
     parser.add_argument('--grad_coeff', type=float, default=5,
                         help='coefficient for ARM gradient')
-    parser.add_argument('--inv_coeff', type=float, default=1,
-                        help='coefficient for inv loss')
     parser.add_argument('--remove_inv', type=float, default=0,
                         help='0: not remove. 1: remove')
     parser.add_argument('--adv_lr',type=float,default=1e-2, help='lr for adv')

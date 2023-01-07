@@ -850,11 +850,11 @@ class INV_LGN_DUAL(MF):
         for i in range(len(self.user_feature_embed)):
             # print(len(self.user_feature_embed), len(self.user_tags))
             # print(self.user_feature_embed[i].weight.shape)
-            user_features.append(self.user_feature_embed[i].weight[self.user_tags[i]])
+            user_features.append(self.user_feature_embed[i].weight[self.user_tags[i].to(torch.int64)])
 
         item_features = []
         for i in range(len(self.item_feature_embed)):
-            item_features.append(self.item_feature_embed[i].weight[self.item_tags[i]])
+            item_features.append(self.item_feature_embed[i].weight[self.item_tags[i].to(torch.int64)])
 
         if len(user_features)>0:
             user_features = torch.cat(user_features,1)
