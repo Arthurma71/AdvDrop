@@ -150,6 +150,9 @@ if __name__ == '__main__':
 
 
     adv_optimizer = torch.optim.Adam([param for param in model.parameters() if param.requires_grad == True], lr=args.adv_lr)
+
+
+    adv_optimizer = torch.optim.Adam([param for param in model.parameters() if param.requires_grad == True], lr=args.adv_lr)
     #optimizer = torch.optim.SparseAdam([param for param in model.parameters() if param.requires_grad == True], lr=model.lr)
     
 
@@ -209,13 +212,13 @@ if __name__ == '__main__':
 
 
                     # loss = -inv_loss
-                    adv_optimizer.zero_grad()
+                    adv_adv_optimizer.zero_grad()
                     mask.backward(my_grad)
                     # print("grad: ",my_grad)
                     # print("inv loss: ",inv_loss)
                     # print(model.M.Q.weight.grad)
                     # loss.backward()
-                    adv_optimizer.step()
+                    adv_adv_optimizer.step()
                     model.step()
 
                     
@@ -229,10 +232,10 @@ if __name__ == '__main__':
                 epoch_adv += 1 
                 cur_adv_patience+=1
                 
-                # if (avg_inv_loss_adp / num_batches_adp) > best_avg_inv:
-                #     cur_adv_patience=0
-                #     best_avg_inv = avg_inv_loss_adp / num_batches_adp
-                #     save_checkpoint_adv(model, epoch, base_path)
+                # # if (avg_inv_loss_adp / num_batches_adp) > best_avg_inv:
+                # #     cur_adv_patience=0
+                # #     best_avg_inv = avg_inv_loss_adp / num_batches_adp
+                # #     save_checkpoint_adv(model, epoch, base_path)
             
                 with open(base_path + 'stats_{}.txt'.format(args.saveID), 'a') as f:
                     f.write(perf_str + "\n")
@@ -276,7 +279,7 @@ if __name__ == '__main__':
 
 
 
-            #model = restore_checkpoint_adv(model, base_path, device)
+            ##model = restore_checkpoint_adv(model, base_path, device)
 
 
         t1 = time.time()
