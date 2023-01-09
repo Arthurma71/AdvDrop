@@ -22,30 +22,15 @@ from model import CausE, IPS, LGN, MACR, INFONCE_batch, INFONCE, SAMREG, BC_LOSS
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
-def compute_IPS(user_index, pos_item_index, neg_item_index, device,y_ips=None):
-    item_index = torch.cat((pos_item_index, neg_item_index),0)
+def compute_IPS(pos_item_index, neg_item_index, device, propensity_0, propensity_1):
     pos_label = torch.ones((len(pos_item_index),))
     neg_label = torch.zeros((len(neg_item_index),))
     y = torch.cat((pos_label, neg_label),0) 
 
-    if y_ips is None:
-        one_over_zl = torch.ones(len(y))
-    else:
-        py1 = y_ips.sum() / len(y_ips)
-        #print("py1:",py1.device)
-        py0 = 1 - py1
-        #print("py0:",py0.device)
-        po1 = len(user_index) / (max(user_index) * max(item_index))
-        py1o1 = sum(y) / len(y)
-        #print("py1o1:",py1o1.device)
-        py0o1 = 1 - py1o1
-        #print("py0o1:",py0o1.device)
-
-        propensity = torch.zeros(len(y)).cuda(device)
-
-        propensity[y == 0] = (py0o1 * po1) / py0
-        propensity[y == 1] = (py1o1 * po1) / py1
-        one_over_zl = 1 / (propensity + 1e-6)
+    propensity = torch.zeros(len(y)).cuda(device)
+    propensity[y == 0] = propensity_0
+    propensity[y == 1] = propensity_1
+    one_over_zl = 1 / (propensity + 1e-6)
 
     return one_over_zl
 
@@ -353,9 +338,9 @@ if __name__ == '__main__':
     # print(pop_mask)
 
     if not args.pop_test:
-        eval_test_ood = ProxyEvaluator(data,data.train_user_list,data.test_ood_user_list,top_k=[20],dump_dict=merge_user_list([data.train_user_list,data.valid_user_list,data.test_id_user_list]),user_neg_test=data.test_neg_user_list)
-        eval_test_id = ProxyEvaluator(data,data.train_user_list,data.test_id_user_list,top_k=[30],dump_dict=merge_user_list([data.train_user_list,data.valid_user_list,data.test_ood_user_list]),user_neg_test=data.test_neg_user_list)
-        eval_valid = ProxyEvaluator(data,data.train_user_list,data.valid_user_list,top_k=[20],user_neg_test=data.test_neg_user_list)
+        eval_test_ood = ProxyEvaluator(data,data.train_user_list,data.test_ood_user_list,top_k=[3],dump_dict=merge_user_list([data.train_user_list,data.valid_user_list,data.test_id_user_list]),user_neg_test=data.test_neg_user_list)
+        eval_test_id = ProxyEvaluator(data,data.train_user_list,data.test_id_user_list,top_k=[5],dump_dict=merge_user_list([data.train_user_list,data.valid_user_list,data.test_ood_user_list]),user_neg_test=data.test_neg_user_list)
+        eval_valid = ProxyEvaluator(data,data.train_user_list,data.valid_user_list,top_k=[5],user_neg_test=data.test_neg_user_list)
         if 'coat' in args.dataset or 'yahoo' in args.dataset:
             eval_valid=ProxyEvaluator(data,data.train_user_list,data.test_id_user_list,top_k=[5],dump_dict=merge_user_list([data.train_user_list,data.valid_user_list,data.test_ood_user_list]),user_neg_test=data.test_neg_user_list)
     else:
@@ -470,7 +455,9 @@ if __name__ == '__main__':
                         neg_items_pop = batch[6]
                 if 'DR' in args.modeltype:
                     prior_y = batch[7]
-                    one_over_zl = compute_IPS(users, pos_items, neg_items, device, torch.FloatTensor(model.data.train_data.y_ips).cuda(device))
+                    propensity_0 = batch[8].float()
+                    propensity_1 = batch[9].float()
+                    one_over_zl = compute_IPS(pos_items, neg_items, device, propensity_0, propensity_1)
 
 
             model.train()
@@ -546,7 +533,7 @@ if __name__ == '__main__':
                 bce_loss, info_loss = model(users,items,labels,sampled_user,sampled_items)
                 loss = bce_loss + info_loss
             elif "DR" in args.modeltype :
-                x_sampled = model.all_samples[model.ul_idxs[batch_i*args.batch_size:(batch_i+1)*args.batch_size]]
+                x_sampled = model.all_samples[model.ul_idxs[batch_i*(args.batch_size*2):(batch_i+1)*(args.batch_size*2)]]
                 sampled_user = torch.LongTensor(x_sampled[:,0])
                 sampled_items = torch.LongTensor(x_sampled[:,1])
                 inv_prop = one_over_zl

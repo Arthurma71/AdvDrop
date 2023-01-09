@@ -795,7 +795,7 @@ class INV_LGN(MF):
 class INV_LGN_DUAL(MF):
     def __init__(self, args, data, writer):
         super().__init__(args, data)
-        self.Graph = data.getSparseGraph()
+        self.Graph = data.getSparseGraph().cuda(self.device)
         self.args = args
         if self.args.dropout_type == 1:
             self.edge_index = data.getEdgeIndex().cuda(self.device)
@@ -832,7 +832,6 @@ class INV_LGN_DUAL(MF):
             self.user_dense_dual = nn.Linear(self.emb_dim*(len(self.user_tags)+1),self.emb_dim)
             self.item_dense = nn.Linear(self.emb_dim*(len(self.item_tags)+1),self.emb_dim)
             self.item_dense_dual = nn.Linear(self.emb_dim*(len(self.item_tags)+1),self.emb_dim)
-
 
             
     def generate_embedings(self, tags, feature_embed):
@@ -912,9 +911,11 @@ class INV_LGN_DUAL(MF):
         values = graph.values()
         if not is_arm:
             if self.args.dropout_type == 0:
-                random_index = torch.rand(len(values)).cuda(self.device) + keep_prob
+                random_index = torch.cuda.FloatTensor(len(values)).uniform_().cuda(self.device) + keep_prob
+                # random_index = torch.rand(len(values)).cuda(self.device) + keep_prob
             else:
-                random_index = torch.rand(len(values)).cuda(self.device) + mask
+                random_index = torch.cuda.FloatTensor(len(values)).uniform_().cuda(self.device) + mask
+                # random_index = torch.rand(len(values)).cuda(self.device) + mask
             random_index = random_index.int().bool()
         else:
             random_index = mask
@@ -952,7 +953,7 @@ class INV_LGN_DUAL(MF):
                     mask = self.M(all_emb, self.edge_index) if dual else 1 - self.M(all_emb, self.edge_index)
             g_droped = self.__dropout(self.Graph, self.args.keep_prob, mask, is_arm).cuda(self.device)
         else:
-            g_droped = self.Graph.cuda(self.device)
+            g_droped = self.Graph
 
         for layer in range(self.n_layers):
             all_emb = torch.sparse.mm(g_droped, all_emb)
@@ -1482,17 +1483,18 @@ class DR(DR_SEQ):
         pred = self.sigmoid(pred)
         # inv_prop = inv_prop.reshape((-1,))
         xent_loss = F.binary_cross_entropy(pred, all_label.cuda(self.device), weight=inv_prop, reduction="sum")
+        imputation_loss = F.binary_cross_entropy(pred, imputation_y.repeat(2, ), weight=inv_prop, reduction="sum")
+        ips_loss = (xent_loss - imputation_loss)/len(all_label)
+
+        direct_loss_o = F.binary_cross_entropy(pred, imputation_y.repeat(2, ), reduction="mean")
 
         sampled_user_emb = all_users[sampled_user]
         sampled_item_emb = all_items[sampled_items]
         pred_ul = torch.sum(torch.mul(sampled_user_emb, sampled_item_emb), dim=1)
         pred_ul = self.sigmoid(pred_ul)
-        imputation_loss = F.binary_cross_entropy(pred, imputation_y.repeat(2, ), reduction="sum")
-
-        ips_loss = (xent_loss - imputation_loss)/len(all_label)
         # direct loss
-        direct_loss = F.binary_cross_entropy(pred_ul, imputation_y,reduction="mean")
-        return ips_loss, direct_loss
+        direct_loss = F.binary_cross_entropy(pred_ul, imputation_y.repeat(2, ), reduction="mean")
+        return ips_loss, direct_loss+direct_loss_o
 
 
 class LGN_BCE(LGN):
