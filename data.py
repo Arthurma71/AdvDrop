@@ -98,6 +98,7 @@ class Data:
         self.items = []
         self.population_list = []
         self.weights = []
+        self.y_ips_D = args.y_ips_D
 
         # List of dictionaries of users and its observed items in corresponding dataset
         # {user1: [item1, item2, item3...], user2: [item1, item3, item4],...}
@@ -264,7 +265,7 @@ class Data:
                                         self.neg_sample, self.n_observations, self.n_items, self.sample_items, self.weights, self.infonce, self.items, self.train_neg_user_list,seq=True)
         elif "DR" in self.modeltype:
             self.train_data = TrainDataset(self.modeltype, self.users, self.train_user_list, self.user_pop_idx, self.item_pop_idx, \
-                                        self.neg_sample, self.n_observations, self.n_items, self.sample_items, self.weights, self.infonce, self.items, self.train_neg_user_list,self.test_id_user_list, self.test_neg_user_list, is_dr=True)
+                                        self.neg_sample, self.n_observations, self.n_items, self.sample_items, self.weights, self.infonce, self.items, self.train_neg_user_list,self.test_id_user_list, self.test_neg_user_list, is_dr=True, dataset = self.dataset, y_ips_D = self.y_ips_D)
         else:
             self.train_data = TrainDataset(self.modeltype, self.users, self.train_user_list, self.user_pop_idx, self.item_pop_idx, \
                                         self.neg_sample, self.n_observations, self.n_items, self.sample_items, self.weights, self.infonce, self.items)
@@ -381,7 +382,7 @@ class Data:
 class TrainDataset(torch.utils.data.Dataset):
 
     def __init__(self, modeltype, users, train_user_list, user_pop_idx, item_pop_idx, neg_sample, \
-                n_observations, n_items, sample_items, weights, infonce, items, train_neg_user_list=None,test_user_list=None, test_neg_user_list=None, seq=False, is_dr = False):
+                n_observations, n_items, sample_items, weights, infonce, items, train_neg_user_list=None,test_user_list=None, test_neg_user_list=None, seq=False, is_dr = False, dataset = None, y_ips_D = None):
         self.modeltype = modeltype
         self.users = users
         self.train_user_list = train_user_list
@@ -399,11 +400,11 @@ class TrainDataset(torch.utils.data.Dataset):
         self.test_user_list = test_user_list
         self.seq=seq
         self.is_dr = is_dr
-        if self.seq or self.is_dr:
-            self.user_seq, self.item_seq, self.lab_seq = self.get_seq(self.train_user_list, self.train_neg_user_list)
-            self.n_observations=len(self.user_seq)
-
-            if is_dr:
+        self.dataset = dataset
+        if is_dr:
+            if  ('coat' in self.dataset or 'yahoo' in self.dataset):
+                self.user_seq, self.item_seq, self.lab_seq = self.get_seq(self.train_user_list, self.train_neg_user_list)
+                self.n_observations=len(self.user_seq)
                 test_user_seq, test_item_seq, test_lab_seq = self.get_seq(self.test_user_list, self.test_neg_user_list)
                 ips_idxs = np.arange(len(test_lab_seq))
                 np.random.shuffle(ips_idxs)
@@ -418,6 +419,14 @@ class TrainDataset(torch.utils.data.Dataset):
 
                 self.propensity_0 = (py0o1 * po1) / py0
                 self.propensity_1 = (py1o1 * po1) / py1
+            else:
+                rating = 0
+                for u in self.users:
+                    if u in self.test_user_list:
+                        for i in self.test_user_list[u]:
+                            rating += 1 
+                self.y_ips = rating/(len(self.users) * n_items * y_ips_D )
+
 
 
     def get_seq(self, user_pos_list, user_neg_list):
@@ -470,7 +479,12 @@ class TrainDataset(torch.utils.data.Dataset):
                 neg_items = randint_choice(self.n_items, size=self.neg_sample)
             neg_items_pop = self.item_pop_idx[neg_items]
             if self.is_dr:
-                return user, pos_item, user_pop, pos_item_pop, pos_weight, torch.tensor(neg_items).long(), neg_items_pop, self.y_ips.mean(), self.propensity_0, self.propensity_1
+                if 'coat' in self.dataset or 'yahoo' in self.dataset:
+                    return user, pos_item, user_pop, pos_item_pop, pos_weight, torch.tensor(neg_items).long(), neg_items_pop, self.y_ips.mean(), self.propensity_0, self.propensity_1
+                else: 
+                    neg_weight = self.weights[torch.tensor(neg_items).long()]
+                    return user, pos_item, user_pop, pos_item_pop, pos_weight, torch.tensor(neg_items).long(), neg_items_pop, self.y_ips, neg_weight
+
             else:
                 return user, pos_item, user_pop, pos_item_pop, pos_weight, torch.tensor(neg_items).long(), neg_items_pop
         else:

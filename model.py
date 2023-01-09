@@ -1171,16 +1171,16 @@ class CVIB(MF):
         super().__init__(args, data)
         self.Graph = data.getSparseGraph().cuda(self.device)
         self.n_layers = args.n_layers
-        self.all_samples = self.generate_total_sample(self.n_users, self.n_items)
         self.sigmoid = nn.Sigmoid()
         self.bce = nn.BCELoss()
-        self.ul_idxs = np.arange(self.all_samples.shape[0])
         self.alpha = args.cvib_alpha
         self.gamma = args.cvib_gamma
         self.args = args
 
-    def shuffle(self):
-        np.random.shuffle(self.ul_idxs)
+    def generate_samples(self):
+        user = torch.randint(self.n_users, (self.args.batch_size*2, ))
+        item = torch.randint(self.n_items, (self.args.batch_size*2, ))
+        return user, item
 
 
     def compute(self):
@@ -1235,11 +1235,6 @@ class CVIB(MF):
 
         return bce_loss, info_loss
 
-    def generate_total_sample(self, num_users, num_items):
-        sample = []
-        for i in range(num_users):
-            sample.extend([[i,j] for j in range(num_items)])
-        return np.array(sample)
     
     def predict(self, users, items=None):
         if items is None:
@@ -1255,21 +1250,16 @@ class CVIB(MF):
 
 
 
-class CVIB_SEQ(MF):
+class CVIB_SEQ(CVIB):
     def __init__(self, args, data):
         super().__init__(args, data)
         self.Graph = data.getSparseGraph().cuda(self.device)
         self.n_layers = args.n_layers
-        self.all_samples = self.generate_total_sample(self.n_users, self.n_items)
         self.sigmoid = nn.Sigmoid()
         self.bce = nn.BCELoss()
-        self.ul_idxs = np.arange(self.all_samples.shape[0])
         self.alpha = args.cvib_alpha
         self.gamma = args.cvib_gamma
         self.args = args
-
-    def shuffle(self):
-        np.random.shuffle(self.ul_idxs)
 
 
     def compute(self):
@@ -1320,11 +1310,6 @@ class CVIB_SEQ(MF):
 
         return bce_loss, info_loss*0.1+ L2_reg 
 
-    def generate_total_sample(self, num_users, num_items):
-        sample = []
-        for i in range(num_users):
-            sample.extend([[i,j] for j in range(num_items)])
-        return np.array(sample)
     
     def predict(self, users, items=None):
         if items is None:
@@ -1379,22 +1364,16 @@ class DR_SEQ(LGN):
         super().__init__(args, data)
         self.Graph = data.getSparseGraph().cuda(self.device)
         self.n_layers = args.n_layers
-        self.all_samples = self.generate_total_sample(self.n_users, self.n_items)
         self.sigmoid = nn.Sigmoid()
         self.bce = nn.BCELoss()
-        self.ul_idxs = np.arange(self.all_samples.shape[0])
         self.args = args
         self.data = data
-
-    def shuffle(self):
-        np.random.shuffle(self.ul_idxs)
-
-    def generate_total_sample(self, num_users, num_items):
-        sample = []
-        for i in range(num_users):
-            sample.extend([[i,j] for j in range(num_items)])
-        return np.array(sample)
     
+    def generate_samples(self):
+        user = torch.randint(self.n_users, (self.args.batch_size*2, ))
+        item = torch.randint(self.n_items, (self.args.batch_size*2, ))
+        return user, item
+     
     def _compute_IPS(self,user_index, item_index, y, y_ips=None):
         if y_ips is None:
             one_over_zl = np.ones(len(y))

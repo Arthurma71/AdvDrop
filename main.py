@@ -338,9 +338,9 @@ if __name__ == '__main__':
     # print(pop_mask)
 
     if not args.pop_test:
-        eval_test_ood = ProxyEvaluator(data,data.train_user_list,data.test_ood_user_list,top_k=[3],dump_dict=merge_user_list([data.train_user_list,data.valid_user_list,data.test_id_user_list]),user_neg_test=data.test_neg_user_list)
-        eval_test_id = ProxyEvaluator(data,data.train_user_list,data.test_id_user_list,top_k=[5],dump_dict=merge_user_list([data.train_user_list,data.valid_user_list,data.test_ood_user_list]),user_neg_test=data.test_neg_user_list)
-        eval_valid = ProxyEvaluator(data,data.train_user_list,data.valid_user_list,top_k=[5],user_neg_test=data.test_neg_user_list)
+        eval_test_ood = ProxyEvaluator(data,data.train_user_list,data.test_ood_user_list,top_k=[20],dump_dict=merge_user_list([data.train_user_list,data.valid_user_list,data.test_id_user_list]),user_neg_test=data.test_neg_user_list)
+        eval_test_id = ProxyEvaluator(data,data.train_user_list,data.test_id_user_list,top_k=[30],dump_dict=merge_user_list([data.train_user_list,data.valid_user_list,data.test_ood_user_list]),user_neg_test=data.test_neg_user_list)
+        eval_valid = ProxyEvaluator(data,data.train_user_list,data.valid_user_list,top_k=[30],user_neg_test=data.test_neg_user_list)
         if 'coat' in args.dataset or 'yahoo' in args.dataset:
             eval_valid=ProxyEvaluator(data,data.train_user_list,data.test_id_user_list,top_k=[5],dump_dict=merge_user_list([data.train_user_list,data.valid_user_list,data.test_ood_user_list]),user_neg_test=data.test_neg_user_list)
     else:
@@ -431,9 +431,6 @@ if __name__ == '__main__':
         t1=time.time()
 
         pbar = tqdm(enumerate(data.train_loader), total = len(data.train_loader))
-        
-        if args.modeltype == 'CVIB' or args.modeltype == 'DR' or args.modeltype == 'CVIB_SEQ':
-            model.shuffle()
 
         for batch_i, batch in pbar:            
             batch = [x.cuda(device) for x in batch]
@@ -455,13 +452,16 @@ if __name__ == '__main__':
                         neg_items_pop = batch[6]
                 if 'DR' in args.modeltype:
                     prior_y = batch[7]
-                    propensity_0 = batch[8].float()
-                    propensity_1 = batch[9].float()
-                    one_over_zl = compute_IPS(pos_items, neg_items, device, propensity_0, propensity_1)
+                    if 'coat' in args.dataset or 'yahoo' in args.dataset:
+                        propensity_0 = batch[8].float()
+                        propensity_1 = batch[9].float()
+                        one_over_zl = compute_IPS(pos_items, neg_items, device, propensity_0, propensity_1)
+                    else: 
+                        neg_weight = batch[8].float()
+                        one_over_zl = torch.cat((pos_weights, neg_weight),0)
 
 
             model.train()
-         
             if args.modeltype == 'INFONCE_batch':
 
                 mf_loss, reg_loss = model(users, pos_items)
@@ -521,21 +521,17 @@ if __name__ == '__main__':
                     loss = mf_loss + reg_loss 
                 
             elif args.modeltype == "CVIB":
-                x_sampled = model.all_samples[model.ul_idxs[batch_i*args.batch_size:(batch_i+1)*args.batch_size]]
-                sampled_user = torch.LongTensor(x_sampled[:,0])
-                sampled_items = torch.LongTensor(x_sampled[:,1])
+                sampled_user, sampled_items = model.generate_samples()
                 bce_loss, info_loss = model(users,pos_items,neg_items,sampled_user,sampled_items)
                 loss = bce_loss + info_loss
             elif args.modeltype == "CVIB_SEQ":
-                x_sampled = model.all_samples[model.ul_idxs[batch_i*args.batch_size:(batch_i+1)*args.batch_size]]
-                sampled_user = torch.LongTensor(x_sampled[:,0])
-                sampled_items = torch.LongTensor(x_sampled[:,1])
+                sampled_user, sampled_items = model.generate_samples()
+                # sampled_user = torch.LongTensor(x_sampled[:,0])
+                # sampled_items = torch.LongTensor(x_sampled[:,1])
                 bce_loss, info_loss = model(users,items,labels,sampled_user,sampled_items)
                 loss = bce_loss + info_loss
             elif "DR" in args.modeltype :
-                x_sampled = model.all_samples[model.ul_idxs[batch_i*(args.batch_size*2):(batch_i+1)*(args.batch_size*2)]]
-                sampled_user = torch.LongTensor(x_sampled[:,0])
-                sampled_items = torch.LongTensor(x_sampled[:,1])
+                sampled_user, sampled_items = model.generate_samples()
                 inv_prop = one_over_zl
                 imputation_y = prior_y.float()
                 if "SEQ" in args.modeltype:

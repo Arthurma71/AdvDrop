@@ -130,6 +130,9 @@ def parse_args():
     parser.add_argument('--cvib_gamma', type=float, default=0.01,
                         help='gamma for CVIB')
 
+    # DR 
+    parser.add_argument('--y_ips_D', type=float, default=0.1,
+                        help='y_ips denominator coefficient')
 
 
 
