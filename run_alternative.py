@@ -55,6 +55,9 @@ if __name__ == '__main__':
     with open(base_path +'stats_{}.txt'.format(args.saveID), 'a') as f:
         f.write(str(args) + "\n")
 
+    with open(base_path +'stats_{}.txt'.format(args.saveID), 'a') as f:
+        f.write(str(args) + "\n")
+
     writer = SummaryWriter(log_dir=run_path)
 
 
