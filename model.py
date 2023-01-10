@@ -1071,10 +1071,10 @@ class INV_LGN_DUAL(MF):
                 user_embeds[idx].append(all_users)
                 item_embeds[idx].append(all_items)
 
-        inv_loss1, _ = self.args.inv_tau*self.inv_loss(user_embeds[0], item_embeds[0])
+        inv_loss1 = self.args.inv_tau*self.inv_loss(user_embeds[0], item_embeds[0])[0]
         # print("inv loss 1", inv_loss1)
         # print(user_embeds[0].shape, item_embeds[0].shape)
-        inv_loss2, _ = self.args.inv_tau*self.inv_loss(user_embeds[1], item_embeds[1])
+        inv_loss2 = self.args.inv_tau*self.inv_loss(user_embeds[1], item_embeds[1])[0]
         # print("inv loss 2", inv_loss2)
         my_grad = self.args.grad_coeff * (-inv_loss1 + inv_loss2) * (u-0.5)
 
