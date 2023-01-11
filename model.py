@@ -881,7 +881,7 @@ class INV_LGN_DUAL(MF):
         kk = scatter(mask, edge_attribute, dim=0, reduce="mean")
         kk = kk.reshape((1,-1))
         loss = torch.mean(torch.pow((kk - kk.T)**2 + 1e-10, 1/2))
-        return loss 
+        return loss, kk
 
         
     def draw_graph_init(self, mask, start='user'):
@@ -1004,15 +1004,19 @@ class INV_LGN_DUAL(MF):
                     mask = self.get_mask(dual_ind)
                     self.writer.add_histogram('Dropout Mask', mask, self.global_step)
                     for a_index in range(len(self.user_tags)):
-                        gini_value, kk  = self.compute_mask_gini(mask, a_index,'user')
+                        #gini_value, kk  = self.compute_mask_gini(mask, a_index,'user')
+                        dist_value, kk  = self.compute_cluster_loss(mask, a_index,'user')
+                        self.writer.add_scalar(f'Attribute_Dist/User Attribute {a_index}', dist_value, self.global_step)
                         
-                        self.writer.add_scalar(f'Attribute_Gini/User Attribute {a_index}', gini_value, self.global_step)
+                        #self.writer.add_scalar(f'Attribute_Gini/User Attribute {a_index}', gini_value, self.global_step)
                         self.writer.add_histogram(f'Attribute_Distribution/User Attribute {a_index}',kk, self.global_step)
                         #self.writer.add_scalars(f'Attribute_Means/User Attribute Distribution {a_index}', {f"group {i}":kk[i] for i in range(len(kk))}, self.global_step)
                     for a_index in range(len(self.item_tags)):
                         #print(self.item_tags[a_index].shape)
-                        gini_value, kk  = self.compute_mask_gini(mask, a_index, 'item')
-                        self.writer.add_scalar(f'Attribute_Gini/Item Attribute {a_index}', gini_value, self.global_step)
+                        #gini_value, kk  = self.compute_mask_gini(mask, a_index, 'item')
+                        #self.writer.add_scalar(f'Attribute_Gini/Item Attribute {a_index}', gini_value, self.global_step)
+                        dist_value, kk  = self.compute_cluster_loss(mask, a_index,'item')
+                        self.writer.add_scalar(f'Attribute_Dist/Item Attribute {a_index}', dist_value, self.global_step)
                         self.writer.add_histogram(f'Attribute_Distribution/Item Attribute {a_index}',kk, self.global_step)
                         #self.writer.add_scalars(f'Attribute_Means/Item Attribute Distribution {a_index}', {f"group {i}":kk[i] for i in range(len(kk))}, self.global_step)
 
@@ -1042,7 +1046,7 @@ class INV_LGN_DUAL(MF):
             mask = self.get_mask(True)
             print("------")
             for i in range(len(self.user_tags)):
-                print(self.compute_cluster_loss(mask, i))
+                print(self.compute_cluster_loss(mask, i)[0])
             print("------")
         return mf_loss, reg_loss, inv_loss
 
@@ -1083,9 +1087,9 @@ class INV_LGN_DUAL(MF):
             if self.args.use_mask_inv:
                 for i in range(len(self.user_tags)):
                     if dual_ind:
-                        cluster_loss_inv1 += self.compute_cluster_loss(drop1.to(torch.float), i)
+                        cluster_loss_inv1 += self.compute_cluster_loss(drop1.to(torch.float), i)[0]
                     else: 
-                        cluster_loss_inv2 += self.compute_cluster_loss(drop2.to(torch.float), i)
+                        cluster_loss_inv2 += self.compute_cluster_loss(drop2.to(torch.float), i)[0]
             # print("drop1 shape: ", drop1.shape)
             # print("count", torch.sum(drop1))
 
