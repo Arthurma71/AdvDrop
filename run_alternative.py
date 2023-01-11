@@ -21,6 +21,7 @@ from torch.utils.data import Dataset, DataLoader
 from utils import *
 from torch.utils.tensorboard import SummaryWriter
 import networkx as nx
+from t_sne_visualization import * 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
 
 
@@ -155,7 +156,7 @@ if __name__ == '__main__':
 
 
     adv_optimizer = torch.optim.Adam([param for param in model.parameters() if param.requires_grad == True], lr=args.adv_lr)
-    
+    mask_optimizer = torch.optim.Adam([param for param in model.parameters() if param.requires_grad == True], lr=args.adv_lr)
 
     for epoch in range(start_epoch, args.epoch):
         # If the early stopping has been reached, restore to the best performance model
@@ -185,6 +186,8 @@ if __name__ == '__main__':
                 #print("embed_user grad after", model.embed_user.weight.requires_grad)
 
                 # adaptive mask step
+                if args.draw_t_sne:
+                    visualiza_embed(model, image_path, epoch, epoch_adv)
 
                 
                 for batch_i, batch in pbar:
@@ -206,24 +209,41 @@ if __name__ == '__main__':
 
                     my_grad = model.forward_ARM()
                     mask = model.get_mask(True)
+                    
                     if 'SEQ' in args.modeltype:
                         _, _, inv_loss = model(users, items, labels)
                     else:
-                        _, _, inv_loss = model(users, pos_items, neg_items, is_draw=True)
+                        _, _, inv_loss = model(users, pos_items, neg_items, is_draw=True, is_cluster = False)
+                    inv_loss = 0
 
 
                     # loss = -inv_loss
                     adv_optimizer.zero_grad()
-                    mask.backward(my_grad)
+                    mask.backward(my_grad,retain_graph=True)
                     # print("grad: ",my_grad)
                     # print("inv loss: ",inv_loss)
                     # print(model.M.Q.weight.grad)
                     # loss.backward()
                     adv_optimizer.step()
                     model.step()
+                    if args.use_new_mask_inv:
+                        adv_optimizer.zero_grad()
+                        loss = None 
+                        for u_index in range(len(model.user_tags)):
+                            if loss is None:
+                                loss = model.compute_cluster_loss(mask,u_index)[0]
+                            else:
+                                loss +=  model.compute_cluster_loss(mask,u_index)[0]
+                        loss = 0 - loss 
+                        mask_optimizer.zero_grad()
+                        loss.backward()
+                        mask_optimizer.step()
+
+
 
                     
-                    avg_inv_loss_adp += inv_loss.detach().item()
+                    # avg_inv_loss_adp += inv_loss.detach().item()
+                    avg_inv_loss_adp += 0
                     num_batches_adp += 1
 
                 t2 = time.time()
@@ -347,6 +367,7 @@ if __name__ == '__main__':
                     flag = True
 
             model.train()
+        
 
     # Get result
     model = restore_best_checkpoint(data.best_valid_epoch, model, base_path, device)

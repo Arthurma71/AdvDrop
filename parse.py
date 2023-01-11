@@ -124,6 +124,9 @@ def parse_args():
     parser.add_argument('--use_attribute',type=bool,default=False, help='use attribute or not')
     parser.add_argument('--use_mask_inv', type=bool, default=False, help='constrain mask or not')
     parser.add_argument('--cluster_coe', type=float, default=10.0, help='cluster coefficient')
+    parser.add_argument('--use_new_mask_inv', type=bool, default=False, help='constrain mask or not')
+    parser.add_argument('--draw_t_sne', type=bool, default=False, help='Draw t sne or not')
+    
 
 
     # CVIB 

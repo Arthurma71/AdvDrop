@@ -419,8 +419,8 @@ if __name__ == '__main__':
     for epoch in range(start_epoch, args.epoch):
 
         # If the early stopping has been reached, restore to the best performance model
-        if flag:
-            break
+        # if flag:
+        #     break
 
         # All models
         running_loss, running_mf_loss, running_reg_loss, num_batches, running_bce_loss, running_info_loss, running_ips_loss, running_direct_loss = 0, 0, 0, 0, 0, 0, 0, 0

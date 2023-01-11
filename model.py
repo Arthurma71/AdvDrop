@@ -1154,6 +1154,12 @@ class INV_LGN_DUAL(MF):
 
         return pred.detach().cpu().numpy()
 
+    def get_top_embeddings(self):
+        all_users, all_items = self.compute()
+        return all_users
+    def get_bottom_embeddings(self):
+        return self.embed_user.weight
+
 class INV_LGN_DUAL_BCE(INV_LGN_DUAL):
     def __init__(self, args, data, writer):
         super().__init__(args, data, writer)
