@@ -118,8 +118,8 @@ class LGN(MF):
         rate_batch = torch.matmul(users, items)
 
         return rate_batch.cpu().detach().numpy()
-
-
+    
+    
 class IPS(LGN):
     def __init__(self, args, data):
         super().__init__(args, data)

@@ -120,12 +120,12 @@ def parse_args():
                         help='0: not remove. 1: remove')
     parser.add_argument('--adv_lr',type=float,default=1e-2, help='lr for adv')
 
-    parser.add_argument('--draw_graph',type=bool,default=False, help='draw graph or not')
-    parser.add_argument('--use_attribute',type=bool,default=False, help='use attribute or not')
-    parser.add_argument('--use_mask_inv', type=bool, default=False, help='constrain mask or not')
+    parser.add_argument('--draw_graph',type=int,default=0, help='draw graph or not')
+    parser.add_argument('--use_attribute',type=int,default=0, help='use attribute or not')
+    parser.add_argument('--use_mask_inv', type=int, default=0, help='constrain mask or not')
     parser.add_argument('--cluster_coe', type=float, default=10.0, help='cluster coefficient')
-    parser.add_argument('--use_new_mask_inv', type=bool, default=False, help='constrain mask or not')
-    parser.add_argument('--draw_t_sne', type=bool, default=False, help='Draw t sne or not')
+    parser.add_argument('--use_new_mask_inv', type=int, default=0, help='constrain mask or not')
+    parser.add_argument('--draw_t_sne', type=int, default=0, help='Draw t sne or not')
     
 
 
