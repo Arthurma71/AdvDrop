@@ -871,6 +871,18 @@ class INV_LGN_DUAL(MF):
         # print(edge_attribute_user.shape,  mask.shape)
         kk = scatter(mask, edge_attribute, dim=0, reduce="mean")
         return gini_index(kk, self.device), kk
+    
+    def compute_cluster_loss(self, mask, index, view = 'user'):
+        # get edge_user_index 
+        edge_user_index = torch.where(self.edge_index[0,:] < self.n_users, self.edge_index[0,:], self.edge_index[1,:])
+        edge_item_index = torch.where(self.edge_index[0,:] < self.n_users, self.edge_index[1,:]-self.n_users, self.edge_index[0,:]-self.n_users)
+        edge_attribute = self.user_tags[index][edge_user_index].to(torch.int64).to(self.device) if view=='user' else self.item_tags[index][edge_item_index].to(torch.int64).to(self.device)
+        # print(edge_attribute_user.shape,  mask.shape)
+        kk = scatter(mask, edge_attribute, dim=0, reduce="mean")
+        kk = kk.reshape((1,-1))
+        loss = torch.mean(torch.pow((kk - kk.T)**2 + 1e-10, 1/2))
+        return loss 
+
         
     def draw_graph_init(self, mask, start='user'):
         G = nx.DiGraph()
@@ -978,7 +990,7 @@ class INV_LGN_DUAL(MF):
         return regularizer
     
 
-    def forward(self, users, pos_items, neg_items, is_draw=False):
+    def forward(self, users, pos_items, neg_items, is_draw=False, is_cluster = False):
         mf_loss=0
         reg_loss=0
         user_embeds=[]
@@ -1026,7 +1038,12 @@ class INV_LGN_DUAL(MF):
         inv_loss, losses= self.inv_loss(user_embeds, item_embeds)
         inv_loss = self.args.inv_tau*inv_loss
         #inv_loss = -self.inv_loss(item_embeds[0], item_embeds[1], user_embeds[0], user_embeds[1], users)
-
+        if is_cluster:
+            mask = self.get_mask(True)
+            print("------")
+            for i in range(len(self.user_tags)):
+                print(self.compute_cluster_loss(mask, i))
+            print("------")
         return mf_loss, reg_loss, inv_loss
 
 
@@ -1053,13 +1070,22 @@ class INV_LGN_DUAL(MF):
         reg_loss=0
         user_embeds=[[],[]]
         item_embeds=[[],[]]
-
+        cluster_loss_inv1 = 0 
+        cluster_loss_inv2 = 0 
+        
         for dual_ind in [True,False]:
             mask = self.get_mask(dual_ind)
+
             if dual_ind:
                 self.writer.add_histogram('Dropout Mask', mask, self.global_step)
             drop1 = u > 1 - mask
             drop2 = u < mask
+            if self.args.use_mask_inv:
+                for i in range(len(self.user_tags)):
+                    if dual_ind:
+                        cluster_loss_inv1 += self.compute_cluster_loss(drop1.to(torch.float), i)
+                    else: 
+                        cluster_loss_inv2 += self.compute_cluster_loss(drop2.to(torch.float), i)
             # print("drop1 shape: ", drop1.shape)
             # print("count", torch.sum(drop1))
 
@@ -1071,13 +1097,18 @@ class INV_LGN_DUAL(MF):
                 user_embeds[idx].append(all_users)
                 item_embeds[idx].append(all_items)
 
-        inv_loss1 = self.args.inv_tau*self.inv_loss(user_embeds[0], item_embeds[0])[0]
+        a = self.inv_loss(user_embeds[0], item_embeds[0])[0]
+        b = self.inv_loss(user_embeds[1], item_embeds[1])[0]
+        if self.args.use_mask_inv:
+            inv_loss1 = a - cluster_loss_inv1*self.args.cluster_coe 
+            inv_loss2 = b - cluster_loss_inv2*self.args.cluster_coe 
+        else:
+            inv_loss1 = a 
+            inv_loss2 = b 
         # print("inv loss 1", inv_loss1)
         # print(user_embeds[0].shape, item_embeds[0].shape)
-        inv_loss2 = self.args.inv_tau*self.inv_loss(user_embeds[1], item_embeds[1])[0]
         # print("inv loss 2", inv_loss2)
-        my_grad = self.args.grad_coeff * (-inv_loss1 + inv_loss2) * (u-0.5)
-
+        my_grad = self.args.grad_coeff * (-inv_loss1 + inv_loss2) * (u-0.5) 
         return my_grad
         
     
