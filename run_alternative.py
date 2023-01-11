@@ -22,6 +22,7 @@ from utils import *
 from torch.utils.tensorboard import SummaryWriter
 import networkx as nx
 from t_sne_visualization import * 
+from copy import deepcopy
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
 
 
@@ -365,6 +366,13 @@ if __name__ == '__main__':
 
                 if temp_flag:
                     flag = True
+            
+            if args.modeltype == "INV_LGN_DUAL":
+                predict_bias=model.get_predict_bias()
+                perf_str = f"current predict bias:{predict_bias} \n"
+                print(perf_str)
+                with open(base_path + 'stats_{}.txt'.format(args.saveID), 'a') as f:
+                    f.write(perf_str + "\n")
 
             model.train()
         

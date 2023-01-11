@@ -1160,6 +1160,34 @@ class INV_LGN_DUAL(MF):
     def get_bottom_embeddings(self):
         return self.embed_user.weight
 
+    def get_predict_bias(self, bs=1024):
+        all_users, all_items = self.compute()
+        users = list(range(self.n_users))
+        start=0
+        users = items = torch.transpose(all_users[torch.tensor(users).cuda(self.device)], 0, 1)
+        user_attributes=[]
+        for index in range(len(self.user_tags)):
+            user_attributes.append(self.user_tags[index].to(torch.int64).to(self.device))
+        bias_scores=torch.zeros(len(self.user_tags)).to(self.device)
+        while start < self.n_items:
+            end = start + bs if start + bs < self.n_items else self.n_items
+            item_idx=np.arange(start, end)
+            start=end
+            items = all_items[torch.tensor(item_idx).cuda(self.device)]
+            rate_batch = torch.matmul(items, users)
+            
+            bias_score=[]
+            for attr in user_attributes:
+                grp_avg=scatter(rate_batch, attr, dim=1, reduce="mean")
+                grp_bias = torch.sum(torch.max(grp_avg, dim=1).values - torch.min(grp_avg, dim=1).values)
+                print(grp_bias)
+                bias_score.append(grp_bias)
+            bias_scores = bias_scores + torch.stack(bias_score)
+        bias_scores = bias_scores / self.n_users
+        return bias_scores.detach().cpu().numpy()
+        
+
+
 class INV_LGN_DUAL_BCE(INV_LGN_DUAL):
     def __init__(self, args, data, writer):
         super().__init__(args, data, writer)
