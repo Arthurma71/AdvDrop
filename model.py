@@ -1104,8 +1104,8 @@ class INV_LGN_DUAL(MF):
         a = self.inv_loss(user_embeds[0], item_embeds[0])[0]
         b = self.inv_loss(user_embeds[1], item_embeds[1])[0]
         if self.args.use_mask_inv:
-            inv_loss1 = a - cluster_loss_inv1*self.args.cluster_coe 
-            inv_loss2 = b - cluster_loss_inv2*self.args.cluster_coe 
+            inv_loss1 = a + cluster_loss_inv1*self.args.cluster_coe 
+            inv_loss2 = b + cluster_loss_inv2*self.args.cluster_coe 
         else:
             inv_loss1 = a 
             inv_loss2 = b 
