@@ -178,6 +178,9 @@ if __name__ == '__main__':
             epoch_adv = 0 
             #model.M.reset_parameters()
             #while cur_adv_patience < args.adv_patience:
+            if args.draw_t_sne:
+                    visualiza_embed(model, image_path, epoch, 0)
+
             for epoch_adv in range(args.adv_epochs):
 
                 t1 = time.time()
@@ -187,8 +190,6 @@ if __name__ == '__main__':
                 #print("embed_user grad after", model.embed_user.weight.requires_grad)
 
                 # adaptive mask step
-                if args.draw_t_sne:
-                    visualiza_embed(model, image_path, epoch, epoch_adv)
 
                 
                 for batch_i, batch in pbar:

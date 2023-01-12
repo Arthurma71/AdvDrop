@@ -1134,6 +1134,18 @@ class INV_LGN_DUAL(MF):
             self.embed_item.requires_grad_(False)
             self.embed_user_dual.requires_grad_(False)
             self.embed_item_dual.requires_grad_(False)
+            if self.args.use_attribute:
+                for u in self.user_feature_embed:
+                    u.requires_grad_(False)
+                for i in self.item_feature_embed:
+                    i.requires_grad_(False)
+
+                self.user_dense.requires_grad_(False)
+                self.user_dense_dual.requires_grad_(False)
+                self.item_dense.requires_grad_(False)
+                self.item_dense_dual.requires_grad_(False)
+                
+            
             for param in self.M.parameters():
                 param.requires_grad = True
         else:
@@ -1141,6 +1153,17 @@ class INV_LGN_DUAL(MF):
             self.embed_item.requires_grad_(True)
             self.embed_user_dual.requires_grad_(True)
             self.embed_item_dual.requires_grad_(True)
+            if self.args.use_attribute:
+                for u in self.user_feature_embed:
+                    u.requires_grad_(True)
+                for i in self.item_feature_embed:
+                    i.requires_grad_(True)
+
+                self.user_dense.requires_grad_(True)
+                self.user_dense_dual.requires_grad_(True)
+                self.item_dense.requires_grad_(True)
+                self.item_dense_dual.requires_grad_(True)
+
             for param in self.M.parameters():
                 param.requires_grad = False
 
