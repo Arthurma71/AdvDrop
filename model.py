@@ -1761,9 +1761,23 @@ class CFC(LGN):
 
         self.user_filters=[]
         for idx in range(len(self.user_tags)):
-            self.user_filters.append(Filter(args,self.user_tags[idx]))
+            self.user_filters.append(Filter(args, self.embed_dim, attribute='attribute_'+str(idx)))
             self.discriminators.append(Discriminator(args,self.user_tags[idx]))
-            
+    
+    def mask_fairDiscriminators(discriminators, mask):
+        # compress('ABCDEF', [1,0,1,0,1,1]) --> A C E F
+        return (d for d, s in zip(discriminators, mask) if s)
+
+
+    def apply_filter(self, user_embeds, masked_filter_set):
+        filter_emb = 0
+        S = 0 
+        for filter_ in masked_filter_set:
+            if filter_ is not None:
+                filter_l_emb += filter_(user_embeds)
+                S += 1
+        return filter_emb/S
+
 
     def forward(self, users, pos_items, neg_items):
         all_users, all_items = self.compute()
@@ -1776,6 +1790,17 @@ class CFC(LGN):
         userEmb0 = self.embed_user(users)
         posEmb0 = self.embed_item(pos_items)
         negEmb0 = self.embed_item(neg_items)
+
+        if self.args.sample_mask:
+            mask = np.random.choice([0, 1], size=(len(self.user_filters),))
+            masked_filter_set = self.mask_fairDiscriminators(self.user_filters, mask)
+        else:
+            masked_filter_set = self.user_filters
+
+        userEmb0 = self.apply_filter(userEmb0, masked_filter_set)
+        posEmb0 = self.apply_filter(posEmb0, masked_filter_set)
+        negEmb0 = self.apply_filter(negEmb0, masked_filter_set)
+
 
         pos_scores = torch.sum(torch.mul(users_emb, pos_emb), dim=1)  # users, pos_items, neg_items have the same shape
         neg_scores = torch.sum(torch.mul(users_emb, neg_emb), dim=1)
