@@ -11,6 +11,7 @@ from torch_geometric.nn.conv import LGConv
 from torch_sparse import SparseTensor, matmul
 from torch_scatter import scatter
 from torch.nn import ModuleList
+from module.fairness import *
 import networkx as nx
 
 def gini_index(p, device):
@@ -1738,3 +1739,58 @@ class BCEMF(MF):
 
         return mf_loss, reg_loss
 '''
+
+
+class CFC(LGN):
+    def __init__(self, args, data):
+        super().__init__(args, data)
+        self.user_tags=[]
+        self.item_tags=[]
+        if 'ml' in args.dataset:
+            self.user_tags = data.get_user_tags()
+        
+        if 'coat' in args.dataset:
+            self.user_tags = data.get_user_tags()
+            self.item_tags = data.get_item_tags()
+        
+        self.user_feature_embed = []
+        self.item_feature_embed = []
+        self.generate_embedings(self.user_tags, self.user_feature_embed)
+        self.generate_embedings(self.item_tags, self.item_feature_embed)
+
+
+        self.user_filters=[]
+        for idx in range(len(self.user_tags)):
+            self.user_filters.append(Filter(args,self.user_tags[idx]))
+            self.discriminators.append(Discriminator(args,self.user_tags[idx]))
+            
+
+    def forward(self, users, pos_items, neg_items):
+        all_users, all_items = self.compute()
+
+        users_emb = all_users[users]
+        pos_emb = all_items[pos_items]
+        neg_emb = all_items[neg_items]
+
+        # TODO: Filter Embedding
+        userEmb0 = self.embed_user(users)
+        posEmb0 = self.embed_item(pos_items)
+        negEmb0 = self.embed_item(neg_items)
+
+        pos_scores = torch.sum(torch.mul(users_emb, pos_emb), dim=1)  # users, pos_items, neg_items have the same shape
+        neg_scores = torch.sum(torch.mul(users_emb, neg_emb), dim=1)
+
+        regularizer = 0.5 * torch.norm(userEmb0) ** 2 + 0.5 * torch.norm(posEmb0) ** 2 + 0.5 * torch.norm(negEmb0) ** 2
+        regularizer = regularizer / self.batch_size
+
+        maxi = torch.log(torch.sigmoid(pos_scores - neg_scores) + 1e-10)
+
+        mf_loss = torch.negative(torch.mean(maxi))
+        reg_loss = self.decay * regularizer
+
+        # TODO: Discriminaotr Loss
+        dis_loss = 0
+
+        return mf_loss, reg_loss, dis_loss
+
+

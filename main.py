@@ -315,6 +315,26 @@ if __name__ == '__main__':
     
     np.save("pop_user",p_user)
     np.save("pop_item",p_item)
+
+    pop_sorted = np.sort(p_item)
+    n_groups = 3
+    grp_view = []
+    for grp in range(n_groups):
+        split = int((data.n_items - 1) * (grp + 1) / n_groups)
+        grp_view.append(pop_sorted[split])
+    print("group_view:", grp_view)
+    item_pop_grp_idx = np.searchsorted(grp_view, p_item)
+
+    
+
+    pop_sorted = np.sort(p_user)
+    grp_view = []
+    for grp in range(n_groups):
+        split = int((data.n_users - 1) * (grp + 1) / n_groups)
+        grp_view.append(pop_sorted[split])
+    print("group_view:", grp_view)
+    user_pop_grp_idx = np.searchsorted(grp_view, p_user)
+    
     
     # pop_sorted=np.sort(p_item)
     # n_groups=3
@@ -403,6 +423,9 @@ if __name__ == '__main__':
     model.cuda(device)
 
     model, start_epoch = restore_checkpoint(model, base_path, device)
+
+    model.item_tags.append(torch.from_numpy(item_pop_grp_idx))
+    model.user_tags.append(torch.from_numpy(user_pop_grp_idx))
 
     if args.test_only:
 
