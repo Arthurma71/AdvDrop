@@ -21,6 +21,7 @@ from parse import parse_args
 from model import CausE, IPS, LGN, MACR, INFONCE_batch, INFONCE, SAMREG, BC_LOSS, BC_LOSS_batch, SimpleX, SimpleX_batch, INV_LGN_DUAL, CVIB, CVIB_SEQ, DR, LGN_BCE, DR_SEQ
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.tensorboard import SummaryWriter
+from t_sne_visualization import *
 
 def compute_IPS(pos_item_index, neg_item_index, device, propensity_0, propensity_1):
     pos_label = torch.ones((len(pos_item_index),))
@@ -296,8 +297,11 @@ if __name__ == '__main__':
     freeze_epoch=args.freeze_epoch if (args.modeltype=="BC_LOSS" or args.modeltype=="BC_LOSS_batch") else 0
     
     run_path = './runs/{}/{}/{}'.format(args.dataset, args.modeltype, saveID)
+    image_path = './image/{}/{}/{}'.format(args.dataset, args.modeltype, saveID)
+
     ensureDir(base_path)
     ensureDir(run_path)
+    ensureDir(image_path)
 
     with open(base_path +'stats_{}.txt'.format(args.saveID), 'a') as f:
         f.write(str(args) + "\n")
@@ -417,6 +421,8 @@ if __name__ == '__main__':
 
     #item_pop_idx = torch.tensor(data.item_pop_idx).cuda(device)
     for epoch in range(start_epoch, args.epoch):
+        if args.draw_t_sne:
+            visualiza_embed(model, image_path, epoch, 0)
 
         # If the early stopping has been reached, restore to the best performance model
         # if flag:
@@ -654,6 +660,12 @@ if __name__ == '__main__':
                 
                 if temp_flag:
                     flag = True
+            
+            predict_bias=model.get_predict_bias()
+            perf_str = f"current predict bias:{predict_bias} \n"
+            print(perf_str)
+            with open(base_path + 'stats_{}.txt'.format(args.saveID), 'a') as f:
+                f.write(perf_str + "\n")
 
             model.train()
         

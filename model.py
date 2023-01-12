@@ -64,10 +64,66 @@ class LGN(MF):
         super().__init__(args, data)
         self.Graph = data.getSparseGraph().cuda(self.device)
         self.n_layers = args.n_layers
+        self.args = args
+        if 'ml' in args.dataset:
+            self.user_tags = data.get_user_tags()
+        
+        if 'coat' in args.dataset:
+            self.user_tags = data.get_user_tags()
+            self.item_tags = data.get_item_tags()
+
+        self.user_feature_embed = []
+        self.item_feature_embed = []
+        self.generate_embedings(self.user_tags, self.user_feature_embed)
+        self.generate_embedings(self.item_tags, self.item_feature_embed)
+
+        if self.args.use_attribute:
+            self.user_dense = nn.Linear(self.emb_dim* (len(self.user_tags)+1) ,self.emb_dim)
+            self.item_dense = nn.Linear(self.emb_dim*(len(self.item_tags)+1),self.emb_dim)
+        
+    def generate_embedings(self, tags, feature_embed):
+        featuren_len = len(tags) 
+        if featuren_len > 0:
+            for i in range(featuren_len):
+                max_value = torch.max(tags[i])+1
+                embed = nn.Embedding(max_value, self.emb_dim).to(self.device)
+                nn.init.xavier_normal_(embed.weight)
+                feature_embed.append(embed)
+                # feature_embed[i] = embed
+
+    def concat_features(self):
+        user_features = []
+        for i in range(len(self.user_feature_embed)):
+            # print(len(self.user_feature_embed), len(self.user_tags))
+            # print(self.user_feature_embed[i].weight.shape)
+            user_features.append(self.user_feature_embed[i].weight[self.user_tags[i].to(torch.int64)])
+
+        item_features = []
+        for i in range(len(self.item_feature_embed)):
+            item_features.append(self.item_feature_embed[i].weight[self.item_tags[i].to(torch.int64)])
+
+        if len(user_features)>0:
+            user_features = torch.cat(user_features,1)
+        if len(item_features)>0:
+            item_features = torch.cat(item_features,1)
+
+        return user_features, item_features
+        
+
 
     def compute(self):
-        users_emb = self.embed_user.weight
-        items_emb = self.embed_item.weight
+        final_embed_user, final_embed_item = None, None
+        if self.args.use_attribute:
+            combined_user_feature, combined_item_feature = self.concat_features()
+            if len(self.user_feature_embed) > 0:
+                final_embed_user = torch.cat([combined_user_feature, self.embed_user.weight],1)
+            if len(self.item_feature_embed) > 0:
+                final_embed_item = torch.cat([combined_item_feature, self.embed_item.weight],1)
+
+
+        users_emb = self.user_dense(final_embed_user) if final_embed_user is not None else  self.embed_user.weight
+        items_emb = self.item_dense(final_embed_item) if final_embed_item is not None else self.embed_item.weight
+
         all_emb = torch.cat([users_emb, items_emb])
 
         embs = [all_emb]
@@ -118,7 +174,39 @@ class LGN(MF):
         rate_batch = torch.matmul(users, items)
 
         return rate_batch.cpu().detach().numpy()
-    
+
+    def get_top_embeddings(self):
+        all_users, all_items = self.compute()
+        return all_users
+
+    def get_bottom_embeddings(self):
+        return self.embed_user.weight
+
+    def get_predict_bias(self, bs=1024):
+        all_users, all_items = self.compute()
+        users = list(range(self.n_users))
+        start=0
+        users = items = torch.transpose(all_users[torch.tensor(users).cuda(self.device)], 0, 1)
+        user_attributes=[]
+        for index in range(len(self.user_tags)):
+            user_attributes.append(self.user_tags[index].to(torch.int64).to(self.device))
+        bias_scores=torch.zeros(len(self.user_tags)).to(self.device)
+        while start < self.n_items:
+            end = start + bs if start + bs < self.n_items else self.n_items
+            item_idx=np.arange(start, end)
+            start=end
+            items = all_items[torch.tensor(item_idx).cuda(self.device)]
+            rate_batch = torch.sigmoid(torch.matmul(items, users))
+            
+            bias_score=[]
+            for attr in user_attributes:
+                grp_avg=scatter(rate_batch, attr, dim=1, reduce="mean")
+                grp_bias = torch.sum(torch.max(grp_avg, dim=1).values - torch.min(grp_avg, dim=1).values)
+                # print(grp_bias)
+                bias_score.append(grp_bias)
+            bias_scores = bias_scores + torch.stack(bias_score)
+        bias_scores = bias_scores / self.n_users
+        return bias_scores.detach().cpu().numpy()
     
 class IPS(LGN):
     def __init__(self, args, data):
@@ -826,7 +914,7 @@ class INV_LGN_DUAL(MF):
         self.item_feature_embed = []
         self.generate_embedings(self.user_tags, self.user_feature_embed)
         self.generate_embedings(self.item_tags, self.item_feature_embed)
-        self.final_embed_user_dual, self.final_embed_item_dual, self.final_embed_item = None, None, None
+
         if self.args.use_attribute:
             self.user_dense = nn.Linear(self.emb_dim* (len(self.user_tags)+1) ,self.emb_dim)
             self.user_dense_dual = nn.Linear(self.emb_dim*(len(self.user_tags)+1),self.emb_dim)
