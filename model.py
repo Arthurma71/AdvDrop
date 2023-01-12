@@ -1197,13 +1197,13 @@ class INV_LGN_DUAL(MF):
             item_idx=np.arange(start, end)
             start=end
             items = all_items[torch.tensor(item_idx).cuda(self.device)]
-            rate_batch = torch.matmul(items, users)
+            rate_batch = torch.sigmoid(torch.matmul(items, users))
             
             bias_score=[]
             for attr in user_attributes:
                 grp_avg=scatter(rate_batch, attr, dim=1, reduce="mean")
                 grp_bias = torch.sum(torch.max(grp_avg, dim=1).values - torch.min(grp_avg, dim=1).values)
-                print(grp_bias)
+                # print(grp_bias)
                 bias_score.append(grp_bias)
             bias_scores = bias_scores + torch.stack(bias_score)
         bias_scores = bias_scores / self.n_users
