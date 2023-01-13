@@ -1742,10 +1742,12 @@ class BCEMF(MF):
 
 
 class CFC(LGN):
-    def __init__(self, args, data):
+    def __init__(self, args, data, writer):
         super().__init__(args, data)
         self.user_tags=[]
         self.item_tags=[]
+        self.embed_dim = args.embed_size
+        self.writer= writer
         if 'ml' in args.dataset:
             self.user_tags = data.get_user_tags()
         
@@ -1759,24 +1761,34 @@ class CFC(LGN):
         self.generate_embedings(self.item_tags, self.item_feature_embed)
 
 
-        self.user_filters=[]
+        self.filters=[]
+        self.discriminators=[]
         for idx in range(len(self.user_tags)):
-            self.user_filters.append(Filter(args, self.embed_dim, attribute='attribute_'+str(idx)))
+            self.filters.append(Filter(args))
             self.discriminators.append(Discriminator(args,self.user_tags[idx]))
     
-    def mask_fairDiscriminators(discriminators, mask):
+    def mask_fairDiscriminators(self, discriminators, mask):
         # compress('ABCDEF', [1,0,1,0,1,1]) --> A C E F
-        return (d for d, s in zip(discriminators, mask) if s)
+        return [d for d, s in zip(discriminators, mask) if s]
 
 
     def apply_filter(self, user_embeds, masked_filter_set):
-        filter_emb = 0
+        filter_emb = None
         S = 0 
         for filter_ in masked_filter_set:
             if filter_ is not None:
-                filter_l_emb += filter_(user_embeds)
+                filter_emb = filter_(user_embeds) if filter_emb is None else filter_emb+filter_(user_embeds)
                 S += 1
         return filter_emb/S
+    
+
+    def apply_discriminator(self, user_embeds, attr_labels, discriminator_set):
+        loss = 0
+        for i, disc_ in enumerate(discriminator_set):
+            if disc_ is not None:
+                loss += disc_(user_embeds,attr_labels[i])
+        return loss
+
 
 
     def forward(self, users, pos_items, neg_items):
@@ -1792,14 +1804,17 @@ class CFC(LGN):
         negEmb0 = self.embed_item(neg_items)
 
         if self.args.sample_mask:
-            mask = np.random.choice([0, 1], size=(len(self.user_filters),))
-            masked_filter_set = self.mask_fairDiscriminators(self.user_filters, mask)
+            mask = np.random.choice([0, 1], size=(len(self.filters),))
+            while np.all(mask==0):
+                mask = np.random.choice([0, 1], size=(len(self.filters),))
+            masked_filter_set = self.mask_fairDiscriminators(self.filters, mask)
+            masked_discriminator_set = self.mask_fairDiscriminators(self.discriminators, mask)
         else:
-            masked_filter_set = self.user_filters
+            masked_filter_set = self.filters
 
-        userEmb0 = self.apply_filter(userEmb0, masked_filter_set)
-        posEmb0 = self.apply_filter(posEmb0, masked_filter_set)
-        negEmb0 = self.apply_filter(negEmb0, masked_filter_set)
+        users_emb = self.apply_filter(users_emb, masked_filter_set)
+        #pos_emb = self.apply_filter(pos_emb, masked_filter_set)
+        #neg_emb = self.apply_filter(neg_emb, masked_filter_set)
 
 
         pos_scores = torch.sum(torch.mul(users_emb, pos_emb), dim=1)  # users, pos_items, neg_items have the same shape
@@ -1813,9 +1828,52 @@ class CFC(LGN):
         mf_loss = torch.negative(torch.mean(maxi))
         reg_loss = self.decay * regularizer
 
-        # TODO: Discriminaotr Loss
-        dis_loss = 0
+        # TODO: Discriminator Loss
+        users_attr =[self.user_tags[index][users].to(torch.int64).to(self.device) for index in range(len(self.user_tags))]
+        masked_users_attr = self.mask_fairDiscriminators(users_attr, mask)
+        dis_loss = self.apply_discriminator(users_emb,masked_users_attr, masked_discriminator_set)
+
+
 
         return mf_loss, reg_loss, dis_loss
+
+    
+    def get_top_embeddings(self):
+        all_users, all_items = self.compute()
+        masked_filter_set = self.filters
+        users_emb = self.apply_filter(all_users, masked_filter_set)
+        return users_emb
+    
+
+    def freeze_args(self, adv=True):
+        if adv:
+            self.embed_user.requires_grad_(False)
+            self.embed_item.requires_grad_(False)
+
+            for filt_ in self.filters:
+                for param in filt_.parameters():
+                    param.requires_grad = False
+            
+
+            for disc_ in self.discriminators:
+                for param in disc_.parameters():
+                    param.requires_grad = True
+            
+        else:
+            self.embed_user.requires_grad_(True)
+            self.embed_item.requires_grad_(True)
+
+            for filt_ in self.filters:
+                for param in filt_.parameters():
+                    param.requires_grad = True
+            
+
+            for disc_ in self.discriminators:
+                for param in disc_.parameters():
+                    param.requires_grad = False
+    def to_device(self, device):
+        for idx in range(len(self.user_tags)):
+            self.filters[idx].to(device)
+            self.discriminators[idx].to(device)
 
 

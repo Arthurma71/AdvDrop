@@ -140,6 +140,9 @@ def parse_args():
                         help='y_ips denominator coefficient')
 
 
+    # CFC
+    parser.add_argument('--sample_mask', type=int, default=1,
+                        help='use sample mask or not')
 
     
     
