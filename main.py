@@ -18,7 +18,7 @@ import os
 from utils import *
 from data import Data
 from parse import parse_args
-from model import CausE, IPS, LGN, MACR, INFONCE_batch, INFONCE, SAMREG, BC_LOSS, BC_LOSS_batch, SimpleX, SimpleX_batch, INV_LGN_DUAL, CVIB, CVIB_SEQ, DR, LGN_BCE, DR_SEQ
+from model import CausE, IPS, LGN, MACR, INFONCE_batch, INFONCE, SAMREG, BC_LOSS, BC_LOSS_batch, SimpleX, SimpleX_batch, INV_LGN_DUAL, CVIB, CVIB_SEQ, DR, LGN_BCE, DR_SEQ, CDAN, sDRO, sDRO_batch
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from t_sne_visualization import *
@@ -416,6 +416,11 @@ if __name__ == '__main__':
         model = LGN_BCE(args, data)
     if args.modeltype == 'IPS_SEQ':
         model = IPS_SEQ(args, data)
+    if args.modeltype == 'CDAN':
+        model = CDAN(args, data)
+    if args.modeltype == 'sDRO':
+        model = sDRO(args, data)
+
 
     
 #    b=args.sample_beta
@@ -452,7 +457,7 @@ if __name__ == '__main__':
         #     break
 
         # All models
-        running_loss, running_mf_loss, running_reg_loss, num_batches, running_bce_loss, running_info_loss, running_ips_loss, running_direct_loss = 0, 0, 0, 0, 0, 0, 0, 0
+        running_loss, running_mf_loss, running_reg_loss, num_batches, running_bce_loss, running_info_loss, running_ips_loss, running_direct_loss, running_unbiased, running_biased, running_dis, running_longtail = 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
         # CausE
         running_cf_loss = 0
         # BC_LOSS
@@ -484,7 +489,7 @@ if __name__ == '__main__':
                     if args.infonce == 0 or args.neg_sample != -1:
                         neg_items = batch[5]
                         neg_items_pop = batch[6]
-                if 'DR' in args.modeltype:
+                if 'DR' == args.modeltype:
                     prior_y = batch[7]
                     if 'coat' in args.dataset or 'yahoo' in args.dataset:
                         propensity_0 = batch[8].float()
@@ -494,6 +499,11 @@ if __name__ == '__main__':
                         neg_weight = batch[8].float()
                         one_over_zl = torch.cat((pos_weights, neg_weight),0)
 
+                if args.modeltype == 'CDAN' or args.modeltype == 'CDAN_MF':
+                    next_pos_item = batch[-1]
+                
+                if args.modeltype == 'sDRO' or args.modeltype == 'sDRO_batch':
+                    users_group = batch[-1]
 
             model.train()
             if args.modeltype == 'INFONCE_batch':
@@ -564,7 +574,7 @@ if __name__ == '__main__':
                 # sampled_items = torch.LongTensor(x_sampled[:,1])
                 bce_loss, info_loss = model(users,items,labels,sampled_user,sampled_items)
                 loss = bce_loss + info_loss
-            elif "DR" in args.modeltype :
+            elif "DR" in args.modeltype and 'sDRO' not in args.modeltype:
                 sampled_user, sampled_items = model.generate_samples()
                 inv_prop = one_over_zl
                 imputation_y = prior_y.float()
@@ -578,6 +588,12 @@ if __name__ == '__main__':
                 inv_prop = one_over_zl[batch_i*args.batch_size:(batch_i+1)*args.batch_size]
                 bce_loss, reg_loss = model(users, items, labels, inv_prop.cuda(device))
                 loss = bce_loss + reg_loss
+            elif args.modeltype == 'sDRO':
+                mf_loss, reg_loss = model(users, pos_items, neg_items, users_group)
+                loss = mf_loss + reg_loss
+            elif args.modeltype == 'CDAN':
+                unbias_loss, bias_loss, dis_loss, long_tail_loss, reg_loss = model(users, pos_items, users_pop, pos_items_pop, next_pos_item, pos_weights)
+                loss = unbias_loss + bias_loss + dis_loss + long_tail_loss + reg_loss
             else:
                 mf_loss, reg_loss = model(users, pos_items, neg_items)
                 loss = mf_loss + reg_loss
@@ -592,7 +608,7 @@ if __name__ == '__main__':
             if args.modeltype != "CVIB" and args.modeltype !=  "CVIB_SEQ" and args.modeltype !=  "DR":
                 running_reg_loss += reg_loss.detach().item()
                 
-            if args.modeltype != 'BC_LOSS' and args.modeltype != 'BC_LOSS_batch' and args.modeltype != "CVIB" and args.modeltype != "CVIB_SEQ" and args.modeltype != "DR" and 'SEQ' not in args.modeltype:
+            if args.modeltype != 'BC_LOSS' and args.modeltype != 'BC_LOSS_batch' and args.modeltype != "CVIB" and args.modeltype != "CVIB_SEQ" and args.modeltype != "DR" and 'SEQ' not in args.modeltype and 'CDAN' not in args.modeltype:
                 running_mf_loss += mf_loss.detach().item()
             
             if args.modeltype == 'CausE':
@@ -618,6 +634,11 @@ if __name__ == '__main__':
             if args.modeltype == "IPS_SEQ":
                 running_bce_loss += bce_loss.detach().item()
                 running_reg_loss += reg_loss.detach().item()
+            if args.modeltype == 'CDAN' or args.modeltype == 'CDAN_MF':
+                running_unbiased += unbias_loss.detach().item()
+                running_biased += bias_loss.detach().item()
+                running_dis = dis_loss.detach().item()
+                running_longtail = long_tail_loss.detach().item()
 
 
             num_batches += 1
@@ -663,6 +684,12 @@ if __name__ == '__main__':
             perf_str = 'Epoch %d [%.1fs]: train==[%.5f=%.5f + %.5f]' % (
                 epoch, t2 - t1, running_loss / num_batches,
                 running_bce_loss / num_batches, running_reg_loss / num_batches)
+        elif args.modeltype == 'CDAN' or args.modeltype  == 'CDAN_MF':
+            perf_str = 'Epoch %d [%.1fs]: train==[%.5f=%.5f + %.5f + %.5f + %.5f + %.5f]' % (
+                epoch, t2 - t1, running_loss / num_batches,
+                running_unbiased / num_batches, running_biased / num_batches, \
+                running_dis / num_batches, running_longtail / num_batches, \
+                running_reg_loss / num_batches)
         else:
             perf_str = 'Epoch %d [%.1fs]: train==[%.5f=%.5f + %.5f]' % (
                 epoch, t2 - t1, running_loss / num_batches,

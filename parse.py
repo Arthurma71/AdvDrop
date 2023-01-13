@@ -144,6 +144,30 @@ def parse_args():
     parser.add_argument('--sample_mask', type=int, default=1,
                         help='use sample mask or not')
 
+    # CDAN 
+    parser.add_argument('--tau', type=float, default=0.15,
+                        help='temparature of infonce loss')
+    parser.add_argument('--hidden_size',type=int, default=8)
+    parser.add_argument('--bias',type=int, default=0)
+    parser.add_argument('--lambda1', type=float, default=1e-5,
+                        help='weight for popularity embedding loss')
+    parser.add_argument('--lambda2', type=float, default=0,
+                        help='weight for dicor loss')
+    parser.add_argument('--lambda3', type=float, default=1e-4,
+                        help='weight for concat loss')
+
+    #sDRO
+    parser.add_argument('--thres1', type = float, default=0.6,
+                        help='threshold of percent of popular items in total interactions for niche users')
+    parser.add_argument('--thres2', type = float, default=0.8,
+                        help='threshold of percent of popular items in total interactions for blockbuster users') 
+    parser.add_argument('--dro_temperature', type = float, default=0.001,
+                        help='A float, temperature of the group re-weighting in DRO. A\
+                                suggested range is between [0.001,0.1]')
+    parser.add_argument('--str_lr', type = float, default=0.01,
+                        help='between [0,1], larger value will let the\
+                                estimations of group loss focus more on the current batch.')
+
     
     
     return parser.parse_args()

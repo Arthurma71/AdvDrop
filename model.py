@@ -129,7 +129,6 @@ class LGN(MF):
 
         embs = [all_emb]
         g_droped = self.Graph
-
         for layer in range(self.n_layers):
             all_emb = torch.sparse.mm(g_droped, all_emb)
             embs.append(all_emb)
@@ -1877,3 +1876,473 @@ class CFC(LGN):
             self.discriminators[idx].to(device)
 
 
+class sDRO(LGN):
+    def __init__(self, args, data):
+        super().__init__(args, data)
+        self.tau = args.tau
+        self.neg_sample =  args.neg_sample if args.neg_sample!=-1 else self.batch_size-1
+        self.n_layers = args.n_layers
+        self.n_items = data.n_items
+        self.n_users = data.n_users
+
+        # 0 niche, 1 diverse, 2 blockbuster
+        self._group_labels = [0, 1, 2]
+        self._group_labels_matrix = torch.reshape(torch.tensor([0, 1, 2]), (-1, 1)).cuda(self.device)
+        self._num_groups = 3
+        self._group_reweight_strategy = 'loss-dro'
+        self._dro_temperature = args.dro_temperature
+        self._streaming_group_loss_lr = args.str_lr
+
+        self._group_weights = torch.tensor([1/3, 1/3, 1/3], requires_grad = False).cuda(self.device)
+        self._group_loss = torch.tensor([0.0, 0.0, 0.0], requires_grad = False).cuda(self.device)
+
+
+    def _compute_group_loss(self, sample_loss, group_identity):
+
+        group_mask = torch.eq(group_identity, self._group_labels_matrix).type(torch.LongTensor).cuda(self.device)
+        group_cnts = torch.sum(group_mask, axis=1)
+        group_cnts += (group_cnts == 0).long()
+        group_loss = torch.divide(torch.sum(group_mask * sample_loss, axis=1), group_cnts)
+
+        return group_loss, group_mask
+
+
+    def forward(self, users, pos_items, neg_items, users_group):
+
+        all_users, all_items = self.compute()
+
+        userEmb0 = self.embed_user(users)
+        posEmb0 = self.embed_item(pos_items)
+        negEmb0 = self.embed_item(neg_items)
+
+        users_emb = all_users[users]
+        pos_emb = all_items[pos_items]
+        neg_emb = all_items[neg_items]
+        # print(neg_emb.shape)
+
+        users_emb = F.normalize(users_emb, dim = -1)
+        pos_emb = F.normalize(pos_emb, dim = -1)
+        neg_emb = F.normalize(neg_emb, dim = -1)
+        
+        pos_ratings = torch.sum(users_emb*pos_emb, dim = -1)
+        if len(neg_emb.shape)>2:
+            neg_ratings = torch.matmul(torch.unsqueeze(users_emb, 1), 
+                                           neg_emb.permute(0, 2, 1)).squeeze(dim=1)
+            ratings = torch.cat([pos_ratings[:, None], neg_ratings], dim=1)
+        else:
+            neg_ratings = torch.sum(torch.mul(users_emb, pos_emb), dim=1) 
+            ratings = torch.cat([pos_ratings, neg_ratings], dim=0)
+
+        #分子
+        numerator = torch.exp(pos_ratings / self.tau)
+        #分母
+        denominator = torch.sum(torch.exp(ratings / self.tau), dim = 1) if len(neg_emb.shape)>2 else torch.sum(torch.exp(ratings / self.tau), dim = 0)
+        ssm_loss = torch.negative(torch.log(numerator/denominator))
+
+        regularizer = 0.5 * torch.norm(userEmb0) ** 2 + 0.5 * torch.norm(posEmb0) ** 2 + 0.5 ** torch.norm(negEmb0)
+        regularizer = regularizer / self.batch_size
+        reg_loss = self.decay * regularizer
+
+        # sDRO part
+        cur_group_loss, group_mask = self._compute_group_loss(ssm_loss, users_group)
+        # Note: only update loss/metric estimations when subgroup exists in a batch.
+        # group_exist_in_batch: [num_groups], bool
+        group_exist_in_batch = (torch.sum(group_mask, axis=1) > 1e-16).type(torch.LongTensor).cuda(self.device)
+
+        # Perform streaming estimation of group loss.
+        stream_group_loss = (1 - group_exist_in_batch * self._streaming_group_loss_lr) \
+                            * self._group_loss.data + self._streaming_group_loss_lr * cur_group_loss
+        self._group_loss.data = stream_group_loss
+
+        # update group weight
+        m = nn.Softmax(dim=-1)
+        new_group_weights = m(torch.log(self._group_weights.data) + self._dro_temperature * self._group_loss.data)
+        self._group_weights.data = new_group_weights
+
+        sDRO_loss = torch.sum(self._group_weights.data * cur_group_loss) * self.batch_size
+
+        return sDRO_loss, reg_loss
+
+class sDRO_batch(sDRO):
+    def __init__(self, args, data):
+        super().__init__(args, data)
+        self.neg_sample =  self.batch_size-1
+
+    def forward(self, users, pos_items, users_group):
+
+        all_users, all_items = self.compute()
+
+        userEmb0 = self.embed_user(users)
+        posEmb0 = self.embed_item(pos_items)
+
+        users_emb = all_users[users]
+        pos_emb = all_items[pos_items]
+
+        users_emb = F.normalize(users_emb, dim=1)
+        pos_emb = F.normalize(pos_emb, dim=1)
+        
+        ratings = torch.matmul(users_emb, torch.transpose(pos_emb, 0, 1))
+        ratings_diag = torch.diag(ratings)
+        
+        #分子
+        numerator = torch.exp(ratings_diag / self.tau)
+        #分母
+        denominator = torch.sum(torch.exp(ratings / self.tau), dim = 1)
+        ssm_loss = torch.negative(torch.log(numerator/denominator))
+
+        regularizer = 0.5 * torch.norm(userEmb0) ** 2 + 0.5 * torch.norm(posEmb0) ** 2
+        regularizer = regularizer
+        reg_loss = self.decay * regularizer
+
+        # sDRO part
+        cur_group_loss, group_mask = self._compute_group_loss(ssm_loss, users_group)
+        # Note: only update loss/metric estimations when subgroup exists in a batch.
+        # group_exist_in_batch: [num_groups], bool
+        group_exist_in_batch = (torch.sum(group_mask, axis=1) > 1e-16).type(torch.LongTensor).cuda(self.device)
+
+        # Perform streaming estimation of group loss.
+        stream_group_loss = (1 - group_exist_in_batch * self._streaming_group_loss_lr) \
+                            * self._group_loss.data + self._streaming_group_loss_lr * cur_group_loss
+        self._group_loss.data = stream_group_loss
+
+        # update group weight
+        m = nn.Softmax(dim=-1)
+        new_group_weights = m(torch.log(self._group_weights.data) + self._dro_temperature * self._group_loss.data)
+        self._group_weights.data = new_group_weights
+
+        sDRO_loss = torch.sum(self._group_weights.data * cur_group_loss) * self.batch_size
+
+        return sDRO_loss, reg_loss
+
+class MLP(nn.Module):
+
+    def __init__(self, input_size = 128, output_size = 64):
+        super(MLP , self).__init__()
+        self.layer = nn.Linear(  input_size  , output_size  )
+        
+    def forward(self, x):  
+        scores   = self.layer(x)
+        return scores
+
+class CDAN(LGN):
+    def __init__(self, args, data):
+        super().__init__(args, data)
+        self.tau = args.tau
+        self.neg_sample =  self.batch_size-1
+        self.hidden_size = args.hidden_size
+        self.lambda1 = args.lambda1
+        self.lambda2 = args.lambda2
+        self.bias = args.bias
+
+        self.item_prop = MLP(self.emb_dim, self.emb_dim)
+        self.item_pop = MLP(self.emb_dim, self.emb_dim)
+        self.item_final = MLP(2*self.emb_dim, self.emb_dim)
+        
+        self.item_prop.cuda(self.device)
+        self.item_pop.cuda(self.device)
+        self.item_final.cuda(self.device)
+
+        self.user_pop_idx = data.user_pop_idx
+        self.item_pop_idx = data.item_pop_idx
+        self.n_users_pop = data.n_user_pop
+        self.n_items_pop = data.n_item_pop
+        self.embed_user_pop = nn.Embedding(self.n_users_pop, self.emb_dim)
+        self.embed_item_pop = nn.Embedding(self.n_items_pop, self.emb_dim)
+        nn.init.xavier_normal_(self.embed_user_pop.weight)
+        nn.init.xavier_normal_(self.embed_item_pop.weight)
+    
+    def compute_p(self):
+
+        users_emb = self.embed_user_pop.weight[self.user_pop_idx]
+        items_emb = self.embed_item_pop.weight[self.item_pop_idx]
+        all_emb = torch.cat([users_emb, items_emb])
+
+        embs = [all_emb]
+        g_droped = self.Graph
+
+        for layer in range(self.n_layers):
+            all_emb = torch.sparse.mm(g_droped, all_emb)
+            embs.append(all_emb)
+        embs = torch.stack(embs, dim=1)
+
+        light_out = torch.mean(embs, dim=1)
+        users, items = torch.split(light_out, [self.n_users, self.n_items])
+
+        return users, items
+
+    def infonce_loss(self, users, pos_items, userEmb0, posEmb0, pos_weights, flag = False, batch_size = 1024):
+
+        users_emb = F.normalize(users, dim=1)
+        pos_emb = F.normalize(pos_items, dim=1)
+        
+        ratings = torch.matmul(users_emb, torch.transpose(pos_emb, 0, 1))
+        ratings_diag = torch.diag(ratings)
+        
+        numerator = torch.exp(ratings_diag / self.tau)
+        denominator = torch.sum(torch.exp(ratings / self.tau), dim = 1)
+
+        if flag :
+            maxi = torch.mul(torch.log(torch.log(numerator/denominator)), pos_weights)
+            ssm_loss = torch.mean(torch.negative(maxi))
+
+        else:
+            ssm_loss = torch.mean(torch.negative(torch.log(numerator/denominator)))
+
+        regularizer = 0.5 * torch.norm(userEmb0) ** 2  +  0.5 * torch.norm(posEmb0) ** 2 
+        regularizer = regularizer
+        reg_loss = self.decay * regularizer
+
+        return ssm_loss, reg_loss 
+     
+    def disentangle(self, pos_items, pos_items_pop):
+        # get property and popularity branch of items
+        item_prop = self.item_prop(pos_items)
+        item_pop = self.item_pop(pos_items)
+
+        item_prop = F.normalize(item_prop, dim=1)
+        item_pop = F.normalize(item_pop, dim=1)
+        pos_items_pop = F.normalize(pos_items_pop, dim=1)
+
+        pos_sim = self.batch_size - torch.sum(torch.mul(item_pop, pos_items_pop ), dim=1)  # users, pos_items, neg_items have the same shape
+        orthogonal = torch.sum(torch.square(torch.mul(item_pop, item_prop)), dim=1)
+
+        return torch.sum(pos_sim + orthogonal)
+
+    def forward(self, users, pos_items, users_pop, pos_items_pop, next_pos_item, pos_weights):
+
+        userEmb0 = self.embed_user(users)
+        posEmb0 = self.embed_item(pos_items)
+
+        userEmb0_p = self.embed_user_pop(users_pop)
+        posEmb0_p = self.embed_item_pop(pos_items_pop)
+
+        all_users, all_items = self.compute()
+        all_users_p, all_items_p = self.compute_p()
+
+        users_pop = all_users_p[users]
+        pos_items_pop = all_items_p[pos_items]
+        #users_pop = userEmb0_p
+        #pos_items_pop = posEmb0_p
+        
+        users = all_users[users]
+        pos_items = all_items[pos_items]
+
+        # get property and popularity branch of items
+        item_prop = self.item_prop(pos_items)
+        item_pop = self.item_pop(pos_items)
+        
+        # unbias
+        unbias_loss, unbias_reg = self.infonce_loss(users, item_prop, userEmb0, posEmb0, pos_weights)
+
+        # bias 
+        item_final = self.item_final(torch.cat((item_prop, pos_items_pop), -1))
+        bias_loss, bias_reg = self.infonce_loss(users, item_final, userEmb0, posEmb0, pos_weights)
+            
+        # disentangled
+        dis_loss = self.lambda1 * self.disentangle(pos_items, pos_items_pop)
+        # long tail
+        #next_item_prop = self.item_prop(all_items[next_pos_item])
+
+        #long_tail_loss, long_tail_reg = self.lambda2 * self.infonce_loss(next_item_prop, item_prop, posEmb0, posEmb0, pos_weights, flag = True)
+        
+        #long_tail_loss  = self.lambda2 * (self.long_tail_loss + long_tail_reg)
+
+        return unbias_loss, bias_loss, dis_loss, unbias_reg , bias_reg
+
+    def predict(self, users, items =  None):
+
+        if self.bias == 0:
+            return self.predict_unbias(users, items)
+        else:
+            return self.predict_bias(users, items)
+    
+    def predict_unbias(self, users, items=None):
+        if items is None:
+            items = list(range(self.n_items))
+
+        all_users, all_items = self.compute()
+
+        users = all_users[torch.tensor(users).cuda(self.device)]
+
+        items = all_items[torch.tensor(items).cuda(self.device)]
+        items_prop = self.item_prop(items)
+        items_prop = torch.transpose(items_prop, 0, 1)
+        rate_batch = torch.matmul(users, items_prop)
+
+        return rate_batch.cpu().detach().numpy()
+
+    def predict_bias(self, users, items=None):
+        if items is None:
+            items = list(range(self.n_items))
+
+        all_users, all_items = self.compute()
+        all_users_pop, all_items_pop = self.compute_p()
+
+        users = all_users[torch.tensor(users).cuda(self.device)]
+        items_pop = all_items_pop[torch.tensor(items).cuda(self.device)]
+
+        items = all_items[torch.tensor(items).cuda(self.device)]
+        items_prop = self.item_prop(items)
+        
+        items_final = self.item_final(torch.cat((items_prop, items_pop), -1))
+        items_final = torch.transpose(items_final, 0, 1)
+        
+        rate_batch = torch.matmul(users, items_final)
+
+        return rate_batch.cpu().detach().numpy()
+    
+    
+class CDAN_MF(CDAN):
+    def __init__(self, args, data):
+        super().__init__(args, data)
+        self.neg_sample = args.neg_sample 
+    
+    def infonce_loss(self, users, pos_items, neg_items, pos_weights, flag = False, batch_size = 1024):
+
+        users_emb = F.normalize(users, dim = -1)
+        pos_emb = F.normalize(pos_items, dim = -1)
+        neg_emb = F.normalize(neg_items, dim = -1)
+        
+        pos_ratings = torch.sum(users_emb*pos_emb, dim = -1)
+        neg_ratings = torch.matmul(torch.unsqueeze(users_emb, 1), neg_emb.permute(0, 2, 1)).squeeze(dim=1)
+        ratings = torch.cat([pos_ratings[:, None], neg_ratings], dim=1)
+ 
+        numerator = torch.exp(pos_ratings / self.tau)
+        denominator = torch.sum(torch.exp(ratings / self.tau), dim = 1)
+
+        if flag:
+            maxi = torch.mul(torch.log(torch.log(numerator/denominator)), pos_weights)
+            ssm_loss = torch.mean(torch.negative(maxi))
+
+        else:
+            ssm_loss = torch.mean(torch.negative(torch.log(numerator/denominator)))
+
+
+        regularizer = 0.5 * torch.norm(users_emb) ** 2 + 0.5 * torch.norm(pos_emb) ** 2 + 0.5 ** torch.norm(neg_emb)
+        regularizer = regularizer / batch_size
+        reg_loss = self.decay * regularizer
+
+        return ssm_loss, reg_loss 
+ 
+    def forward(self, users, pos_items, neg_items, users_pop, pos_items_pop, neg_items_pop, next_pos_item, pos_weights):
+
+        
+        userEmb0 = self.embed_user(users)
+        posEmb0 = self.embed_item(pos_items)
+        negEmb0 = self.embed_item(neg_items)
+
+        userEmb0_p = self.embed_user_pop(users_pop)
+        posEmb0_p = self.embed_item_pop(pos_items_pop)
+        negEmb0_p = self.embed_item_pop(neg_items_pop)
+
+        all_users, all_items = self.compute()
+        all_users_p, all_items_p = self.compute_p()
+
+        users_pop = all_users_p[users]
+        pos_items_pop = all_users_p[pos_items]
+        neg_items_pop = all_users_p[neg_items]
+
+        users_pop = userEmb0_p
+        pos_items_pop = posEmb0_p 
+        neg_items_pop = negEmb0_p
+
+        users = all_users[users]
+        pos_items = all_items[pos_items]
+        neg_items = all_items[neg_items]
+
+        # get property and popularity branch of items
+        item_prop = self.item_prop(pos_items)
+        neg_item_prop = self.item_prop(neg_items)
+        item_pop = self.item_pop(pos_items)
+        neg_item_pop_mlp = self.item_pop(neg_items)
+        
+        # unbias
+        unbias_loss, unbias_reg = self.infonce_loss(users, item_prop, neg_item_prop, pos_weights)
+
+        # bias 
+        item_final = self.item_final(torch.cat((item_prop, pos_items_pop), -1))
+        neg_item_final = self.item_final(torch.cat((neg_item_prop, neg_items_pop), -1))
+        bias_loss, bias_reg = self.infonce_loss(users, item_final, neg_item_final, pos_weights)
+        
+        # disentangled
+        dis_loss = self.lambda1 * self.disentangle(pos_items, pos_items_pop)
+        # long tail
+        #next_item_prop = self.item_prop(self.embed_item(next_pos_item))
+
+        #long_tail_loss, long_tail_reg =  self.infonce_loss(next_item_prop, item_prop, neg_item_prop, pos_weights, flag = True)
+        #long_tail_loss = self.lambda2 * (long_tail_loss + long_tail_reg)
+
+        return unbias_loss, bias_loss, dis_loss, unbias_reg, bias_reg
+   
+class CDAN_test(CDAN):
+    def __init__(self, args, data):
+        super().__init__(args, data)
+        self.neg_sample = args.neg_sample 
+
+        self.item_prop = MLP(self.emb_dim, self.emb_dim)
+        
+        self.item_prop.cuda(self.device)
+    
+    
+    def infonce_loss(self, users, pos_items, neg_items, pos_weights, flag = False, batch_size = 1024):
+
+        users_emb = F.normalize(users, dim = -1)
+        pos_emb = F.normalize(pos_items, dim = -1)
+        neg_emb = F.normalize(neg_items, dim = -1)
+        
+        pos_ratings = torch.sum(users_emb*pos_emb, dim = -1)
+        neg_ratings = torch.matmul(torch.unsqueeze(users_emb, 1), neg_emb.permute(0, 2, 1)).squeeze(dim=1)
+        ratings = torch.cat([pos_ratings[:, None], neg_ratings], dim=1)
+ 
+        numerator = torch.exp(pos_ratings / self.tau)
+        denominator = torch.sum(torch.exp(ratings / self.tau), dim = 1)
+
+        if flag:
+            maxi = torch.mul(torch.log(torch.log(numerator/denominator)), pos_weights)
+            ssm_loss = torch.mean(torch.negative(maxi))
+
+        else:
+            ssm_loss = torch.mean(torch.negative(torch.log(numerator/denominator)))
+
+
+        regularizer = 0.5 * torch.norm(users_emb) ** 2 + 0.5 * torch.norm(pos_emb) ** 2 + 0.5 ** torch.norm(neg_emb)
+        regularizer = regularizer / batch_size
+        reg_loss = self.decay * regularizer
+
+        return ssm_loss, reg_loss 
+ 
+    def forward(self, users, pos_items, neg_items, users_pop, pos_items_pop, neg_items_pop, pos_weights):
+
+        users = self.embed_user(users)
+        pos_items = self.embed_item(pos_items)
+        neg_items = self.embed_item(neg_items)
+
+        #users_pop = self.embed_user_pop(users_pop)
+        #pos_items_pop = self.embed_item_pop(pos_items_pop)
+        neg_items_pop = self.embed_item_pop(neg_items_pop)
+
+        # get property and popularity branch of items
+        item_prop = self.item_prop(pos_items)
+        neg_item_prop = self.item_prop(neg_items)
+        #item_pop = self.item_pop(pos_items)
+        #neg_item_pop_mlp = self.item_pop(neg_items)
+        
+        # unbias
+        unbias_loss, unbias_reg = self.infonce_loss(users, item_prop, neg_item_prop, pos_weights)
+
+        return unbias_loss, unbias_reg
+
+    # UNBIAS
+    
+    def predict(self, users, items=None):
+        if items is None:
+            items = list(range(self.n_items))
+
+        users = self.embed_user(torch.tensor(users).cuda(self.device))
+        items = self.embed_item(torch.tensor(items).cuda(self.device))
+
+        items_prop = self.item_prop(items)
+        items_prop = torch.transpose(items_prop, 0, 1)
+        rate_batch = torch.matmul(users, items_prop)
+
+        return rate_batch.cpu().detach().numpy()

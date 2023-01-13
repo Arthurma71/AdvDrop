@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from torch.utils.data import Dataset, DataLoader
 from reckit import randint_choice
+import operator
 
 
 # Helper function used when loading data from files
@@ -87,6 +88,9 @@ class Data:
         self.num_workers = args.num_workers
         self.dataset=args.dataset
         self.use_neg_test= args.neg_test
+        self.thres1 = args.thres1
+        self.thres2 = args.thres2
+
         if "ml" in args.dataset or "coat" in args.dataset:
             self.user_tags = None
             self.user_tags_path = self.path + 'user_meta.npy'
@@ -256,6 +260,54 @@ class Data:
             self.sample_pos_big[self.sorted_weight[i][0]]=lo
 
         self.sample_items = np.array(self.items, dtype=int)
+        if 'sDRO' in self.modeltype:
+            ## sDOR
+            # divide groups
+            pop_item = {key: len(value) for key, value in self.train_item_list.items()}
+            sorted_pop_item = dict(sorted(pop_item.items(), key=operator.itemgetter(1),reverse=True))
+            sorted_items = np.array(list(sorted_pop_item.keys()))
+
+            # top 20% items as popular items
+            top = int(0.2*self.n_items)
+            popular_items = sorted_items[:top]
+            unpopular_items = sorted_items[top:]
+            item_label = {}
+            for item in popular_items:
+                item_label[item] = 'popular'
+            for item in unpopular_items:
+                item_label[item] = 'unpopular'
+
+            user_group_dict = {}
+
+            n_niche = 0
+            n_diverse = 0
+            n_block = 0
+
+            for user, items in self.train_user_list.items():
+                popular_counts = 0
+                
+                for item in items:
+                    if item_label[item] == 'popular':
+                        popular_counts += 1
+                        
+                ratio = popular_counts/len(items)
+                
+                if ratio < self.thres1:
+                    user_group_dict[user] = 0
+                    n_niche += 1
+                elif ratio < self.thres2:
+                    user_group_dict[user] = 1
+                    n_diverse += 1
+                else:
+                    user_group_dict[user] = 2
+                    n_block += 1
+
+            print("Percentage of users")
+            print(n_niche/self.n_users, n_diverse/self.n_users, n_block/self.n_users)
+
+            user_group_dict = collections.OrderedDict(sorted(user_group_dict.items()))
+            self.group_identity = list(user_group_dict.values())
+
 
         if self.modeltype == 'CausE':
             self.train_data = TrainDataset_cause(self.modeltype, self.users, self.train_user_list, self.n_observations, \
@@ -263,9 +315,12 @@ class Data:
         elif "SEQ" in self.modeltype:
             self.train_data = TrainDataset(self.modeltype, self.users, self.train_user_list, self.user_pop_idx, self.item_pop_idx, \
                                         self.neg_sample, self.n_observations, self.n_items, self.sample_items, self.weights, self.infonce, self.items, self.train_neg_user_list,seq=True)
-        elif "DR" in self.modeltype:
+        elif "DR" == self.modeltype:
             self.train_data = TrainDataset(self.modeltype, self.users, self.train_user_list, self.user_pop_idx, self.item_pop_idx, \
                                         self.neg_sample, self.n_observations, self.n_items, self.sample_items, self.weights, self.infonce, self.items, self.train_neg_user_list,self.test_id_user_list, self.test_neg_user_list, is_dr=True, dataset = self.dataset, y_ips_D = self.y_ips_D)
+        elif 'sDRO' in self.modeltype:
+            self.train_data = TrainDataset(self.modeltype, self.users, self.train_user_list, self.user_pop_idx, self.item_pop_idx, \
+                                        self.neg_sample, self.n_observations, self.n_items, self.sample_items, self.weights, self.infonce, self.items, group_identity = self.group_identity)
         else:
             self.train_data = TrainDataset(self.modeltype, self.users, self.train_user_list, self.user_pop_idx, self.item_pop_idx, \
                                         self.neg_sample, self.n_observations, self.n_items, self.sample_items, self.weights, self.infonce, self.items)
@@ -382,7 +437,7 @@ class Data:
 class TrainDataset(torch.utils.data.Dataset):
 
     def __init__(self, modeltype, users, train_user_list, user_pop_idx, item_pop_idx, neg_sample, \
-                n_observations, n_items, sample_items, weights, infonce, items, train_neg_user_list=None,test_user_list=None, test_neg_user_list=None, seq=False, is_dr = False, dataset = None, y_ips_D = None):
+                n_observations, n_items, sample_items, weights, infonce, items, train_neg_user_list=None,test_user_list=None, test_neg_user_list=None, seq=False, is_dr = False, dataset = None, y_ips_D = None, group_identity = None):
         self.modeltype = modeltype
         self.users = users
         self.train_user_list = train_user_list
@@ -401,6 +456,7 @@ class TrainDataset(torch.utils.data.Dataset):
         self.seq=seq
         self.is_dr = is_dr
         self.dataset = dataset
+        self.group_identity = group_identity
         if is_dr:
             if  ('coat' in self.dataset or 'yahoo' in self.dataset):
                 self.user_seq, self.item_seq, self.lab_seq = self.get_seq(self.train_user_list, self.train_neg_user_list)
@@ -484,7 +540,15 @@ class TrainDataset(torch.utils.data.Dataset):
                 else: 
                     neg_weight = self.weights[torch.tensor(neg_items).long()]
                     return user, pos_item, user_pop, pos_item_pop, pos_weight, torch.tensor(neg_items).long(), neg_items_pop, self.y_ips, neg_weight
-
+            elif 'sDRO' in self.modeltype:
+                user_group = self.group_identity[index]
+                return user, pos_item, user_pop, pos_item_pop, pos_weight, torch.tensor(neg_items).long(), neg_items_pop, user_group
+            elif 'CDAN' in self.modeltype:
+                max_length = len(self.train_user_list[user])-1
+                idx = rd.randint(0, max_length)
+                next_idx = (idx+1) % (max_length+1)
+                next_pos_item = self.train_user_list[user][next_idx]
+                return user, pos_item, user_pop, pos_item_pop, pos_weight, torch.tensor(neg_items).long(), neg_items_pop, next_pos_item
             else:
                 return user, pos_item, user_pop, pos_item_pop, pos_weight, torch.tensor(neg_items).long(), neg_items_pop
         else:
