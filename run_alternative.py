@@ -105,10 +105,13 @@ if __name__ == '__main__':
     sort_pop = sorted(pop_dict.items(), key=lambda item: item[1], reverse=True)
     pop_mask = [item[0] for item in sort_pop[:20]]
     #print(pop_mask)
-    if "douban" not in args.dataset:
-        top_ks=[5,3,3]
-    else:
+    if "douban" in args.dataset:
         top_ks=[30,20,20]
+    elif "yelp" in args.dataset:
+        top_ks = [20,20,20]
+    else:
+        top_ks=[5,3,3]
+    print("top Ks : ", top_ks)
 
     if not args.pop_test:
         eval_test_ood = ProxyEvaluator(data,data.train_user_list,data.test_ood_user_list,top_k=[top_ks[0]],dump_dict=merge_user_list([data.train_user_list,data.valid_user_list,data.test_id_user_list]),user_neg_test=data.test_neg_user_list)

@@ -66,6 +66,9 @@ class LGN(MF):
         self.Graph = data.getSparseGraph().cuda(self.device)
         self.n_layers = args.n_layers
         self.args = args
+        self.user_tags=[]
+        self.item_tags=[]
+        
         if 'ml' in args.dataset:
             self.user_tags = data.get_user_tags()
         
@@ -73,12 +76,11 @@ class LGN(MF):
             self.user_tags = data.get_user_tags()
             self.item_tags = data.get_item_tags()
 
-        self.user_feature_embed = []
-        self.item_feature_embed = []
-        self.generate_embedings(self.user_tags, self.user_feature_embed)
-        self.generate_embedings(self.item_tags, self.item_feature_embed)
-
         if self.args.use_attribute:
+            self.user_feature_embed = []
+            self.item_feature_embed = []
+            self.generate_embedings(self.user_tags, self.user_feature_embed)
+            self.generate_embedings(self.item_tags, self.item_feature_embed)
             self.user_dense = nn.Linear(self.emb_dim* (len(self.user_tags)+1) ,self.emb_dim)
             self.item_dense = nn.Linear(self.emb_dim*(len(self.item_tags)+1),self.emb_dim)
         
@@ -910,12 +912,11 @@ class INV_LGN_DUAL(MF):
             self.user_tags = data.get_user_tags()
             self.item_tags = data.get_item_tags()
         
-        self.user_feature_embed = []
-        self.item_feature_embed = []
-        self.generate_embedings(self.user_tags, self.user_feature_embed)
-        self.generate_embedings(self.item_tags, self.item_feature_embed)
-
         if self.args.use_attribute:
+            self.user_feature_embed = []
+            self.item_feature_embed = []
+            self.generate_embedings(self.user_tags, self.user_feature_embed)
+            self.generate_embedings(self.item_tags, self.item_feature_embed)
             self.user_dense = nn.Linear(self.emb_dim* (len(self.user_tags)+1) ,self.emb_dim)
             self.user_dense_dual = nn.Linear(self.emb_dim*(len(self.user_tags)+1),self.emb_dim)
             self.item_dense = nn.Linear(self.emb_dim*(len(self.item_tags)+1),self.emb_dim)
