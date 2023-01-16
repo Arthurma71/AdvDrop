@@ -594,7 +594,7 @@ if __name__ == '__main__':
                 mf_loss, reg_loss = model(users, pos_items, neg_items, users_group)
                 loss = mf_loss + reg_loss
             elif args.modeltype == 'CDAN':
-                unbias_loss, bias_loss, dis_loss, long_tail_loss, reg_loss = model(users, pos_items, users_pop, pos_items_pop, next_pos_item, pos_weights)
+                unbias_loss, bias_loss, dis_loss, long_tail_loss, reg_loss = model(users, pos_items, users_pop, pos_items_pop, next_pos_item, pos_weights,neg_items,neg_items_pop)
                 loss = unbias_loss + bias_loss + dis_loss + long_tail_loss + reg_loss
             else:
                 mf_loss, reg_loss = model(users, pos_items, neg_items)

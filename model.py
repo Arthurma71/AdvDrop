@@ -2094,6 +2094,21 @@ class CDAN(LGN):
         reg_loss = self.decay * regularizer
 
         return ssm_loss, reg_loss 
+
+    def bpr_loss(self, users_emb, pos_emb, neg_emb, userEmb0, posEmb0, negEmb0):
+        pos_scores = torch.sum(torch.mul(users_emb, pos_emb), dim=1)  # users, pos_items, neg_items have the same shape
+        neg_scores = torch.sum(torch.mul(users_emb, neg_emb), dim=1)
+
+        regularizer = 0.5 * torch.norm(userEmb0) ** 2 + 0.5 * torch.norm(posEmb0) ** 2 + 0.5 * torch.norm(negEmb0) ** 2
+        regularizer = regularizer / self.batch_size
+
+        maxi = torch.log(torch.sigmoid(pos_scores - neg_scores) + 1e-10)
+
+        mf_loss = torch.negative(torch.mean(maxi))
+        reg_loss = self.decay * regularizer
+
+        return mf_loss, reg_loss
+    
      
     def disentangle(self, pos_items, pos_items_pop):
         # get property and popularity branch of items
@@ -2109,45 +2124,63 @@ class CDAN(LGN):
 
         return torch.sum(pos_sim + orthogonal)
 
-    def forward(self, users, pos_items, users_pop, pos_items_pop, next_pos_item, pos_weights):
+    def forward(self, users, pos_items, users_pop, pos_items_pop, next_pos_item, pos_weights, neg_items, neg_items_pop):
 
         userEmb0 = self.embed_user(users)
         posEmb0 = self.embed_item(pos_items)
+        negEmb0 = self.embed_item(neg_items)
 
         userEmb0_p = self.embed_user_pop(users_pop)
         posEmb0_p = self.embed_item_pop(pos_items_pop)
+        negEmb0_p = self.embed_item_pop(neg_items_pop)
 
         all_users, all_items = self.compute()
         all_users_p, all_items_p = self.compute_p()
 
         users_pop = all_users_p[users]
         pos_items_pop = all_items_p[pos_items]
+        neg_items_pop = all_items_p[neg_items]
         #users_pop = userEmb0_p
         #pos_items_pop = posEmb0_p
         
         users = all_users[users]
         pos_items = all_items[pos_items]
+        neg_items = all_items[neg_items]
 
         # get property and popularity branch of items
-        item_prop = self.item_prop(pos_items)
-        item_pop = self.item_pop(pos_items)
+
+        # item_prop = self.item_prop(pos_items)
+        # item_pop = self.item_pop(pos_items)
+
+        item_prop_pos = self.item_prop(pos_items)
+        item_prop_neg = self.item_prop(neg_items)
+
+        item_pop_pos = self.item_pop(pos_items)
+        item_pop_neg = self.item_pop(neg_items)
+
         
         # unbias
-        unbias_loss, unbias_reg = self.infonce_loss(users, item_prop, userEmb0, posEmb0, pos_weights)
+        # unbias_loss, unbias_reg = self.infonce_loss(users, item_prop, userEmb0, posEmb0, pos_weights)
+        unbias_loss, unbias_reg = self.bpr_loss(users, item_prop_pos, item_prop_neg, userEmb0, posEmb0, negEmb0)
 
-        # bias 
-        item_final = self.item_final(torch.cat((item_prop, pos_items_pop), -1))
-        bias_loss, bias_reg = self.infonce_loss(users, item_final, userEmb0, posEmb0, pos_weights)
+        # bias ()
+        # item_final = self.item_final(torch.cat((item_prop, pos_items_pop), -1))
+        # bias_loss, bias_reg = self.infonce_loss(users, item_final, userEmb0, posEmb0, pos_weights)
+
+        # bpr loss 
+        item_final_pos = self.item_final(torch.cat((item_prop_pos, pos_items_pop), -1))
+        item_final_neg = self.item_final(torch.cat((item_prop_neg, neg_items_pop), -1))
+        bias_loss, bias_reg = self.bpr_loss(users, item_final_pos,item_final_neg, userEmb0, posEmb0, negEmb0)
             
         # disentangled
-        dis_loss = self.lambda1 * self.disentangle(pos_items, pos_items_pop)
+        # dis_loss = self.lambda1 * self.disentangle(pos_items, pos_items_pop)
+        dis_loss = 0.5 * self.lambda1 * self.disentangle(pos_items, pos_items_pop) + 0.5 * self.lambda1 * self.disentangle(neg_items, neg_items_pop)
         # long tail
         #next_item_prop = self.item_prop(all_items[next_pos_item])
 
         #long_tail_loss, long_tail_reg = self.lambda2 * self.infonce_loss(next_item_prop, item_prop, posEmb0, posEmb0, pos_weights, flag = True)
         
         #long_tail_loss  = self.lambda2 * (self.long_tail_loss + long_tail_reg)
-
         return unbias_loss, bias_loss, dis_loss, unbias_reg , bias_reg
 
     def predict(self, users, items =  None):
