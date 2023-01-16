@@ -1931,7 +1931,7 @@ class sDRO(LGN):
                                            neg_emb.permute(0, 2, 1)).squeeze(dim=1)
             ratings = torch.cat([pos_ratings[:, None], neg_ratings], dim=1)
         else:
-            neg_ratings = torch.sum(torch.mul(users_emb, pos_emb), dim=1) 
+            neg_ratings = torch.sum(torch.mul(users_emb, neg_emb), dim=1) 
             ratings = torch.cat([pos_ratings, neg_ratings], dim=0)
 
         #分子
