@@ -29,21 +29,3 @@ def visualiza_embed(model, image_path, epoch, epoch_adv):
 
         plt.savefig(image_path+f'/epoch_{epoch}_adv_{epoch_adv}_attribute_{i}.png')
 
-            
-
-
-if __name__ == '__main__':
-    args = parse_args()
-    data = Data(args)
-    data.load_data()
-    device = torch.device(args.cuda)
-    writer = SummaryWriter(log_dir='data') 
-    print(args.use_attribute)
-    model = INV_LGN_DUAL(args, data, writer).to(device)
-    for i in range(10):
-        image_path = '/storage/pbwei/INV-LGN/image/{}/{}/{}'.format(args.dataset, args.modeltype, f"wrong{i}")
-        ensureDir(image_path)
-        visualiza_embed(model, image_path,0,0)
-        break
-
-
