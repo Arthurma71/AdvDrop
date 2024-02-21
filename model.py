@@ -882,7 +882,7 @@ class INV_LGN(MF):
         return rate_batch.cpu().detach().numpy()
 
 
-class INV_LGN_DUAL(MF):
+class ADV_DROP(MF):
     def __init__(self, args, data, writer):
         super().__init__(args, data)
         self.Graph = data.getSparseGraph().cuda(self.device)
@@ -1300,7 +1300,7 @@ class INV_LGN_DUAL(MF):
         
 
 
-class INV_LGN_DUAL_BCE(INV_LGN_DUAL):
+class ADV_DROP_BCE(ADV_DROP):
     def __init__(self, args, data, writer):
         super().__init__(args, data, writer)
         self.sigmoid = nn.Sigmoid()
