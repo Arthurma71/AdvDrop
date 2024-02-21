@@ -369,7 +369,7 @@ if __name__ == '__main__':
                 if temp_flag:
                     flag = True
             
-            if args.modeltype == "INV_LGN_DUAL":
+            if args.modeltype == "AdvDrop":
                 predict_bias=model.get_predict_bias()
                 perf_str = f"current predict bias:{predict_bias} \n"
                 print(perf_str)
