@@ -13,7 +13,7 @@ Code of "General Debiasing for Graph-based Collaborative Filtering via Adversari
 - To run the code, first run the following command to install tools used in evaluation:
 
 ```
-python setup.py build_ext --inplace
+python setup.py 
 ```
 
 ### AdvDrop Training 
