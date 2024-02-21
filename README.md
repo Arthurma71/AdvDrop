@@ -47,9 +47,9 @@ python run_advdrop.py --modeltype AdvDrop --dataset Douban.new --n_layers 2 --ne
 ### Other Baselines Training 
 
 ```python
-python main.py --modeltype `Model` --dataset `Dataset` --n_layers 2 --neg_sample 1 --saveID yourID 
+python main.py --modeltype Model --dataset Dataset --n_layers 2 --neg_sample 1 --saveID yourID 
 ```
-Please replace 'Model' with the baseline name and replace 'Dataset' with the name of the dataset you intend to evaluate. And don't forget to add specific params for the baselines.
+Please replace `Model` with the baseline name and replace `Dataset` with the name of the dataset you intend to evaluate. And don't forget to add specific params for the baselines.
 
 
 
