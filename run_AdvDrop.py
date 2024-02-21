@@ -16,7 +16,7 @@ import collections
 import os
 from data import Data
 from parse import parse_args
-from model import INV_LGN_DUAL, LGN, INV_LGN_DUAL_BCE
+from model import ADV_DROP, LGN
 from torch.utils.data import Dataset, DataLoader
 from utils import *
 from torch.utils.tensorboard import SummaryWriter
@@ -133,12 +133,10 @@ if __name__ == '__main__':
     evaluators = [eval_valid, eval_test_id, eval_test_ood]
     eval_names = ["valid", "test_id", "test_ood"]
 
-    if args.modeltype == 'INV_LGN_DUAL':
-        model = INV_LGN_DUAL(args, data,writer)
+    if args.modeltype == 'AdvDrop':
+        model = ADV_DROP(args, data,writer)
     if args.modeltype == 'LGN':
         model = LGN(args, data)
-    if args.modeltype == 'INV_LGN_DUAL_BCE':
-        model = INV_LGN_DUAL_BCE(args, data,writer)
     #    b=args.sample_beta
     model.cuda(device)
 
