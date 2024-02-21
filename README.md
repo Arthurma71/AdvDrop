@@ -73,6 +73,18 @@ Please replace `Model` with the baseline name and replace `Dataset` with the nam
 
 - reckit == 0.2.4
 
+- numpy == 1.20.1
+  
+- matplotlib == 3.3.4
+  
+- tqdm == 4.59.0
+  
+- scipy == 1.6.2
+  
+- pandas == 1.2.4
+  
+- cython ==0.29.23
+
 ## Reference
 If you want to use our codes and datasets in your research, please cite:
 
