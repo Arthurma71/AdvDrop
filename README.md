@@ -50,11 +50,11 @@ python run_CFC.py --dataset Dataset --n_layers 2 --neg_sample 1 --saveID yourID 
 Please replace `Dataset` with the name of the dataset you intend to evaluate and change the embedding size and learning rate as desired.
 
 ### InvPref Training 
-Please see here [InvPref]([https://github.com/AIflowerQ/InvPref_KDD_2022]).
+Please see here [InvPref](https://github.com/AIflowerQ/InvPref_KDD_2022).
 
 ### AutoDebias Training
 
-Please see here [AutoDebias]([https://github.com/DongHande/AutoDebias])).
+Please see here [AutoDebias](https://github.com/DongHande/AutoDebias).
 ### Other Baselines Training 
 ```python
 python main.py --modeltype Model --dataset Dataset --n_layers 2 --neg_sample 1 --saveID yourID 
