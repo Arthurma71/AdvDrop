@@ -405,7 +405,7 @@ if __name__ == '__main__':
         model = SimpleX(args,data)
     if args.modeltype == "SimpleX_batch":
         model = SimpleX_batch(args,data)
-    if args.modeltype == 'ADV_DROP':
+    if args.modeltype == 'AdvDrop':
         model = ADV_DROP(args, data, writer)
     if args.modeltype == 'CVIB':
         model = CVIB(args, data)
@@ -443,7 +443,7 @@ if __name__ == '__main__':
                 
 
     flag = False
-    if args.modeltype == 'ADV_DROP':
+    if args.modeltype == 'AdvDrop':
         model.freeze_args(False)
 
 
@@ -558,7 +558,7 @@ if __name__ == '__main__':
                 mf_loss, reg_loss = model(users, pos_items)
                 loss = mf_loss + reg_loss
             
-            elif args.modeltype == "ADV_DROP":
+            elif args.modeltype == "AdvDrop":
                 if args.remove_inv == 0:
                     mf_loss, reg_loss, inv_loss = model(users,pos_items,neg_items)
                     loss = mf_loss + reg_loss + inv_loss 
@@ -603,7 +603,7 @@ if __name__ == '__main__':
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            if args.modeltype == "ADV_DROP":
+            if args.modeltype == "AdvDrop":
                 model.step()
 
             running_loss += loss.detach().item()
@@ -620,9 +620,9 @@ if __name__ == '__main__':
                 running_loss1 += loss1.detach().item()
                 running_loss2 += loss2.detach().item()
 
-            if args.remove_inv == 0 and args.modeltype == "ADV_DROP":
+            if args.remove_inv == 0 and args.modeltype == "AdvDrop":
                 running_inv_loss += inv_loss.detach().item()
-                # if args.modeltype == "ADV_DROP":
+                # if args.modeltype == "AdvDrop":
                 #     running_inv_loss += inv_loss.detach().item()
             if args.modeltype == "CVIB" or args.modeltype == "CVIB_SEQ":
                 running_bce_loss += bce_loss.detach().item()
