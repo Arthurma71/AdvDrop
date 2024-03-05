@@ -10,10 +10,10 @@ Code of "General Debiasing for Graph-based Collaborative Filtering via Adversari
 
 - We provide implementation for various baselines presented in the paper.
 
-- To run the code, first run the following command to install tools used in evaluation:
+- To run the code, first install Cython via pip and run the following command to install tools used in evaluation:
 
 ```
-python setup.py 
+python setup.py build_ext --inplace
 ```
 
 ### AdvDrop Training 
